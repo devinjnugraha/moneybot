@@ -4,12 +4,12 @@
 
 - **Last updated:** 2026-06-15
 - **Branch:** `feat/slice-0-1`
-- **Last commit:** `4427430 feat(repos): user repository + row mappers`
+- **Last commit:** `1974fef feat(agent): system prompt (SP-01..SP-10 + generated category taxonomy)`
 - **Working tree:** clean (only untracked `.claude/`, which is tooling — leave it)
 
 ## Where we are
 
-The Slice 0+1 plan has **19 tasks**. **Tasks 1–10 are done and committed. Tasks 11–19 remain.**
+The Slice 0+1 plan has **19 tasks**. **Tasks 1–15 are done and committed. Tasks 16–19 remain.**
 
 | # | Task | Status |
 |---|------|--------|
@@ -23,12 +23,12 @@ The Slice 0+1 plan has **19 tasks**. **Tasks 1–10 are done and committed. Task
 | 8 | Migration SQL (001_init.sql) | ✅ `6641275` |
 | 9 | pg Pool, migrate, seed | ✅ `5762243` |
 | 10 | User repository + row mappers | ✅ `4427430` |
-| 11 | Account repository (TDD) | ⬜ next |
-| 12 | Transaction repository (TDD) | ⬜ |
-| 13 | Session repository + `createRepos()` (TDD) | ⬜ |
-| 14 | `runAgent` seam + orchestrator helpers (TDD) | ⬜ |
-| 15 | System prompt | ⬜ |
-| 16 | `buildTools` factory (TDD) | ⬜ |
+| 11 | Account repository (TDD) | ✅ `0b677d3` |
+| 12 | Transaction repository (TDD) | ✅ `2d76694` |
+| 13 | Session repository + `createRepos()` (TDD) | ✅ `99b0580` |
+| 14 | `runAgent` seam + orchestrator helpers (TDD) | ✅ `82ab9e4` |
+| 15 | System prompt | ✅ `1974fef` |
+| 16 | `buildTools` factory (TDD) | ⬜ next |
 | 17 | Orchestrator `handleMessage` (TDD) | ⬜ |
 | 18 | grammY bot + entry point | ⬜ |
 | 19 | End-to-end smoke test (manual — needs real env vars + Telegram bot) | ⬜ |
@@ -66,6 +66,10 @@ The plan was written before implementation. These issues were found during the b
 4. **`dotenv` was added (plan omitted env loading).** `src/config/index.ts` starts with `import 'dotenv/config';` so `schema.parse(process.env)` works in app, tests, and scripts. `dotenv` is in `package.json` deps. **Do not remove it.**
 
 5. **Category count is 58, not 60.** The plan says "60 categories" in several spots (Task 6 commit msg, Task 9 expected output/verify). The SRS §10 actually has **58** (52 expense + 6 income). The implementation correctly seeds 58. **Do not "fix" the count to 60** — 58 is right. (If you re-run seed, expect `[seed] ensured 58 categories`.)
+
+6. **AI SDK v4.3.19: tool-call parts use `args` (not `input`); generic toolsets collapse `toolResults` to `never`.** Two SDK-version realities the plan got wrong (discovered Task 14):
+   - `ToolCallPart` uses **`args`** for call arguments (`node_modules/ai/dist/index.d.ts:690`), **not `input`** (a v5-ism). The plan's Task 14 test wrote `input: {}`; corrected to `args`. **Tasks 16/17**: when constructing tool-call / tool-result `CoreMessage`s, use `args`. (`ToolResultPart` correctly uses `result`.)
+   - `generateText`'s `result.toolResults` is typed via a mapped conditional over the toolset's *concrete* keys (`ToolResultUnion<TOOLS>`), so it resolves to `never[]` when `tools` is the seam's generic `Record<string, CoreTool>`. `createRunner` widens it at the boundary: `(result.toolResults as Array<{ toolName: string; result: unknown }>).map(...)`. Don't rely on `toolResults` element typing through a non-concrete toolset.
 
 ## Environment & ops notes
 
