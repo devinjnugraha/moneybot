@@ -4,12 +4,12 @@
 
 - **Last updated:** 2026-06-15
 - **Branch:** `feat/slice-0-1`
-- **Last commit:** `1974fef feat(agent): system prompt (SP-01..SP-10 + generated category taxonomy)`
+- **Last commit:** `1bfbdf0 feat(agent): buildTools (create_account, get_accounts, create_expense) with never-throw write gate`
 - **Working tree:** clean (only untracked `.claude/`, which is tooling — leave it)
 
 ## Where we are
 
-The Slice 0+1 plan has **19 tasks**. **Tasks 1–15 are done and committed. Tasks 16–19 remain.**
+The Slice 0+1 plan has **19 tasks**. **Tasks 1–16 are done and committed. Tasks 17–19 remain.**
 
 | # | Task | Status |
 |---|------|--------|
@@ -28,8 +28,8 @@ The Slice 0+1 plan has **19 tasks**. **Tasks 1–15 are done and committed. Task
 | 13 | Session repository + `createRepos()` (TDD) | ✅ `99b0580` |
 | 14 | `runAgent` seam + orchestrator helpers (TDD) | ✅ `82ab9e4` |
 | 15 | System prompt | ✅ `1974fef` |
-| 16 | `buildTools` factory (TDD) | ⬜ next |
-| 17 | Orchestrator `handleMessage` (TDD) | ⬜ |
+| 16 | `buildTools` factory (TDD) | ✅ `1bfbdf0` |
+| 17 | Orchestrator `handleMessage` (TDD) | ⬜ next |
 | 18 | grammY bot + entry point | ⬜ |
 | 19 | End-to-end smoke test (manual — needs real env vars + Telegram bot) | ⬜ |
 
@@ -70,6 +70,7 @@ The plan was written before implementation. These issues were found during the b
 6. **AI SDK v4.3.19: tool-call parts use `args` (not `input`); generic toolsets collapse `toolResults` to `never`.** Two SDK-version realities the plan got wrong (discovered Task 14):
    - `ToolCallPart` uses **`args`** for call arguments (`node_modules/ai/dist/index.d.ts:690`), **not `input`** (a v5-ism). The plan's Task 14 test wrote `input: {}`; corrected to `args`. **Tasks 16/17**: when constructing tool-call / tool-result `CoreMessage`s, use `args`. (`ToolResultPart` correctly uses `result`.)
    - `generateText`'s `result.toolResults` is typed via a mapped conditional over the toolset's *concrete* keys (`ToolResultUnion<TOOLS>`), so it resolves to `never[]` when `tools` is the seam's generic `Record<string, CoreTool>`. `createRunner` widens it at the boundary: `(result.toolResults as Array<{ toolName: string; result: unknown }>).map(...)`. Don't rely on `toolResults` element typing through a non-concrete toolset.
+   - `CoreTool.execute` is `(args, options)` (**2 params**) and **optional** (`execute?`). The plan's Task 16 test called `tool.execute(args)` with 1 arg and no non-null assertion → tsc errors (TS2554 / TS2722). Fix: route direct test calls through a helper: `t!.execute!(args as never, {} as never)`. **Production `tools.ts` is unaffected** — `generateText` calls `execute` with both args and the impls ignore `options`. **Test-only concern.** Also: project ESLint forbids `no-explicit-any`, so the plan's `: any` test annotations were replaced with a narrow result type.
 
 ## Environment & ops notes
 
