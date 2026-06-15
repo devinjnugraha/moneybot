@@ -1,0 +1,104 @@
+import { describe, it, expect, vi } from 'vitest';
+import { handleMessage } from '../../src/agent/orchestrator.js';
+import type { Slice1Repos } from '../../src/repositories/interfaces.js';
+import type { AgentRunner } from '../../src/agent/run-agent.js';
+import type { CoreMessage } from 'ai';
+
+function fakeRunner(reply: string, transactionId?: string): AgentRunner {
+  return vi.fn(async () => {
+    const responseMessages: CoreMessage[] = [{ role: 'assistant', content: reply }];
+    const toolResults = transactionId
+      ? [{ toolName: 'create_expense', result: { status: 'ok', data: { transaction: { transactionId } } } }]
+      : [];
+    return { text: reply, responseMessages, toolResults };
+  });
+}
+
+function mockRepos(): Slice1Repos {
+  return {
+    users: {
+      findByTelegramChatId: vi.fn(async () => null),
+      findById: vi.fn(),
+      create: vi.fn(async (i: { telegramChatId: string; name: string }) => ({
+        userId: 'u1', telegramChatId: i.telegramChatId, name: i.name, language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+      })),
+      update: vi.fn(),
+    } as never,
+    accounts: {
+      findAllByUserId: vi.fn(async () => []),
+      findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+    } as never,
+    transactions: { create: vi.fn(), findByDateRange: vi.fn(), findByAccountAndDateRange: vi.fn(), findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn() } as never,
+    sessions: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      delete: vi.fn(),
+    } as never,
+  };
+}
+
+describe('handleMessage', () => {
+  it('onboards an unknown user and replies with the onboarding prompt', async () => {
+    const repos = mockRepos();
+    const { reply, onboarded } = await handleMessage({
+      text: 'hai',
+      chatId: '999',
+      repos,
+      run: fakeRunner('Halo! Aku MoneyBot. Buat akun pertamamu dulu ya.'),
+      system: 'sys',
+      contextWindowTurns: 20,
+      sessionIdleTimeoutMinutes: 30,
+    });
+    expect(onboarded).toBe(true);
+    expect(repos.users.create).toHaveBeenCalledWith(expect.objectContaining({ telegramChatId: '999' }));
+    expect(reply).toContain('MoneyBot');
+  });
+
+  it('persists session turns and lastTransactionId when a write produced a transaction', async () => {
+    const repos = mockRepos();
+    // known user + has an account
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+    });
+    (repos.accounts.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 0, isActive: true, createdAt: '', updatedAt: '' },
+    ]);
+    const { reply } = await handleMessage({
+      text: 'bakso 20000 bca',
+      chatId: '1',
+      repos,
+      run: fakeRunner('✅ Pengeluaran dicatat', 'txn-9'),
+      system: 'sys',
+      contextWindowTurns: 20,
+      sessionIdleTimeoutMinutes: 30,
+    });
+    expect(reply).toBe('✅ Pengeluaran dicatat');
+    expect(repos.sessions.set).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: '1',
+      lastTransactionId: 'txn-9',
+    }));
+  });
+
+  it('starts a fresh session when the prior one expired', async () => {
+    const repos = mockRepos();
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+    });
+    (repos.sessions.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      chatId: '1', userId: 'u1', turns: [{ role: 'user', content: 'old' }], lastTransactionId: undefined,
+      lastActivityAt: new Date('2020-01-01').toISOString(), // ancient
+    });
+    await handleMessage({
+      text: 'halo',
+      chatId: '1',
+      repos,
+      run: fakeRunner('halo balik'),
+      system: 'sys',
+      contextWindowTurns: 20,
+      sessionIdleTimeoutMinutes: 30,
+    });
+    // The persisted turns must NOT include the ancient 'old' message
+    const saved = (repos.sessions.set as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { turns: CoreMessage[] };
+    expect(saved.turns.some((m: CoreMessage) => (m as { content?: string }).content === 'old')).toBe(false);
+  });
+});
