@@ -4,12 +4,12 @@
 
 - **Last updated:** 2026-06-15
 - **Branch:** `feat/slice-0-1`
-- **Last commit:** `1bfbdf0 feat(agent): buildTools (create_account, get_accounts, create_expense) with never-throw write gate`
+- **Last commit:** `ba3d707 feat(app): grammY long-polling bot + entry point wiring (migrate, seed, agent)`
 - **Working tree:** clean (only untracked `.claude/`, which is tooling — leave it)
 
 ## Where we are
 
-The Slice 0+1 plan has **19 tasks**. **Tasks 1–16 are done and committed. Tasks 17–19 remain.**
+The Slice 0+1 plan has **19 tasks**. **Tasks 1–18 are done and committed — all code is complete. Only Task 19 (manual end-to-end smoke test) remains, and it needs real `TELEGRAM_BOT_TOKEN` + `OPENROUTER_API_KEY` from the user.**
 
 | # | Task | Status |
 |---|------|--------|
@@ -29,9 +29,9 @@ The Slice 0+1 plan has **19 tasks**. **Tasks 1–16 are done and committed. Task
 | 14 | `runAgent` seam + orchestrator helpers (TDD) | ✅ `82ab9e4` |
 | 15 | System prompt | ✅ `1974fef` |
 | 16 | `buildTools` factory (TDD) | ✅ `1bfbdf0` |
-| 17 | Orchestrator `handleMessage` (TDD) | ⬜ next |
-| 18 | grammY bot + entry point | ⬜ |
-| 19 | End-to-end smoke test (manual — needs real env vars + Telegram bot) | ⬜ |
+| 17 | Orchestrator `handleMessage` (TDD) | ✅ `e40b972` |
+| 18 | grammY bot + entry point | ✅ `ba3d707` |
+| 19 | End-to-end smoke test (manual — needs real env vars + Telegram bot) | ⬜ next (user) |
 
 ## Reference docs (read before continuing)
 
