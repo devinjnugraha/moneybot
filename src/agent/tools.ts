@@ -44,8 +44,11 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
     },
   });
 
-  if (!hasAccount) return tools;
-
+  // Read tools are ALWAYS available: SRS SP-02 makes get_accounts an
+  // unconditional rule ("Always verify via get_accounts…"), so it must be
+  // registered even during onboarding — otherwise the model obeys SP-02 and
+  // calls an unregistered tool → AI SDK NoSuchToolError. Returns [] for a user
+  // with no accounts, which the model uses to prompt account creation (FR-01).
   tools.get_accounts = tool({
     description: 'Daftar semua akun user beserta saldo saat ini.',
     parameters: z.object({}),
@@ -60,6 +63,10 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
       }));
     },
   });
+
+  // Gate only WRITE tools behind onboarding: no account yet → create_account +
+  // get_accounts only.
+  if (!hasAccount) return tools;
 
   const expenseSchema = z.object({
     description: z.string(),

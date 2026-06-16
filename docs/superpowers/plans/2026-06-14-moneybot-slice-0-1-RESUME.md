@@ -2,7 +2,7 @@
 
 > **Read this first.** This file is the handoff for any Claude session continuing the MoneyBot build. It captures exactly where work stopped, the decisions/fixes a fresh session must carry forward, and how to resume safely. The plan and spec are linked below.
 
-- **Last updated:** 2026-06-15
+- **Last updated:** 2026-06-16
 - **Branch:** `feat/slice-0-1`
 - **Last commit:** `ba3d707 feat(app): grammY long-polling bot + entry point wiring (migrate, seed, agent)`
 - **Working tree:** clean (only untracked `.claude/`, which is tooling — leave it)
@@ -71,6 +71,8 @@ The plan was written before implementation. These issues were found during the b
    - `ToolCallPart` uses **`args`** for call arguments (`node_modules/ai/dist/index.d.ts:690`), **not `input`** (a v5-ism). The plan's Task 14 test wrote `input: {}`; corrected to `args`. **Tasks 16/17**: when constructing tool-call / tool-result `CoreMessage`s, use `args`. (`ToolResultPart` correctly uses `result`.)
    - `generateText`'s `result.toolResults` is typed via a mapped conditional over the toolset's *concrete* keys (`ToolResultUnion<TOOLS>`), so it resolves to `never[]` when `tools` is the seam's generic `Record<string, CoreTool>`. `createRunner` widens it at the boundary: `(result.toolResults as Array<{ toolName: string; result: unknown }>).map(...)`. Don't rely on `toolResults` element typing through a non-concrete toolset.
    - `CoreTool.execute` is `(args, options)` (**2 params**) and **optional** (`execute?`). The plan's Task 16 test called `tool.execute(args)` with 1 arg and no non-null assertion → tsc errors (TS2554 / TS2722). Fix: route direct test calls through a helper: `t!.execute!(args as never, {} as never)`. **Production `tools.ts` is unaffected** — `generateText` calls `execute` with both args and the impls ignore `options`. **Test-only concern.** Also: project ESLint forbids `no-explicit-any`, so the plan's `: any` test annotations were replaced with a narrow result type.
+
+7. **`get_accounts` is ALWAYS registered (it's a read tool); only write tools are gated behind onboarding.** The spec (§onboarding) and plan had `buildTools` return ONLY `create_account` while `hasAccount=false` (early `return tools` fired before registering `get_accounts`). But SRS **`SP-02`** makes "Always verify via `get_accounts`…" an **unconditional** prompt rule — so the model obeyed it during onboarding, called an unregistered tool, and the AI SDK threw **`NoSuchToolError`**, crashing the message handler. **Found at the Task 19 smoke test.** Fix: register `get_accounts` **before** the `if (!hasAccount) return tools` line in `src/agent/tools.ts`; the gate now covers only the write tool `create_expense`. `get_accounts` returns `[]` for a no-account user, which the model uses to prompt account creation (FR-01). The spec's *rationale* ("no other **write** tool available during onboarding") is preserved; only the literal "ONLY create_account" is overridden. `tests/agent/tools.test.ts` gating test updated to match.
 
 ## Environment & ops notes
 

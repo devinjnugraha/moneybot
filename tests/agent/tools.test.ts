@@ -55,14 +55,19 @@ describe('buildTools — create_account', () => {
 });
 
 describe('buildTools — onboarding gating', () => {
-  it('exposes ONLY create_account when hasAccount is false', () => {
+  // Read tools (get_accounts) are ALWAYS available, per SRS SP-02 ("Always verify
+  // via get_accounts before referencing account names or balances"). Only WRITE
+  // tools are gated behind onboarding: if get_accounts were withheld when
+  // hasAccount=false, the prompt's unconditional SP-02 rule makes the model call
+  // it during onboarding and the AI SDK throws NoSuchToolError (crashes the run).
+  it('always exposes create_account + get_accounts; gates create_expense when hasAccount is false', () => {
     const tools = buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: false });
     expect(tools.create_account).toBeDefined();
-    expect(tools.get_accounts).toBeUndefined();
+    expect(tools.get_accounts).toBeDefined();
     expect(tools.create_expense).toBeUndefined();
   });
 
-  it('exposes get_accounts + create_expense when hasAccount is true', () => {
+  it('exposes all tools (incl. create_expense) when hasAccount is true', () => {
     const tools = buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: true });
     expect(tools.get_accounts).toBeDefined();
     expect(tools.create_expense).toBeDefined();
