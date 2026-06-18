@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { handleMessage } from '../../src/agent/orchestrator.js';
-import type { Slice1Repos } from '../../src/repositories/interfaces.js';
+import type { Repos } from '../../src/repositories/interfaces.js';
 import type { AgentRunner } from '../../src/agent/run-agent.js';
 import type { CoreMessage } from 'ai';
 
@@ -14,7 +14,7 @@ function fakeRunner(reply: string, transactionId?: string): AgentRunner {
   });
 }
 
-function mockRepos(): Slice1Repos {
+function mockRepos(): Repos {
   return {
     users: {
       findByTelegramChatId: vi.fn(async () => null),
@@ -28,11 +28,27 @@ function mockRepos(): Slice1Repos {
       findAllByUserId: vi.fn(async () => []),
       findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
     } as never,
-    transactions: { create: vi.fn(), findByDateRange: vi.fn(), findByAccountAndDateRange: vi.fn(), findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn() } as never,
+    transactions: { create: vi.fn(), createTransfer: vi.fn(), findByDateRange: vi.fn(), findByAccountAndDateRange: vi.fn(), findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn() } as never,
     sessions: {
       get: vi.fn(async () => null),
       set: vi.fn(async () => undefined),
       delete: vi.fn(),
+    } as never,
+    budgets: {
+      findByUserAndMonth: vi.fn(async () => []),
+      findByName: vi.fn(async () => null),
+      create: vi.fn(),
+      incrementSpent: vi.fn(),
+      update: vi.fn(),
+    } as never,
+    recurrings: {
+      findAllByUserId: vi.fn(async () => []),
+      findByDayOfMonth: vi.fn(),
+      findById: vi.fn(),
+      findByName: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deactivate: vi.fn(),
     } as never,
   };
 }

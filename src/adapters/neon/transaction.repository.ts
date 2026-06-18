@@ -1,6 +1,6 @@
 import { pool } from './pool.js';
 import { mapTransaction } from './mappers.js';
-import type { ITransactionRepository, CreateTransactionInput } from '../../repositories/interfaces.js';
+import type { ITransactionRepository, CreateTransactionInput, CreateTransferInput } from '../../repositories/interfaces.js';
 import type { Transaction } from '../../domain/entities.js';
 
 export class NeonTransactionRepository implements ITransactionRepository {
@@ -92,6 +92,38 @@ export class NeonTransactionRepository implements ITransactionRepository {
       values,
     );
     return mapTransaction(rows[0] as Record<string, unknown>);
+  }
+
+  async createTransfer(input: CreateTransferInput): Promise<Transaction> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `INSERT INTO transactions
+          (user_id, type, amount, description, account_id, to_account_id, date, notes)
+         VALUES ($1, 'transfer', $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          input.userId, input.amount, input.description,
+          input.fromAccountId, input.toAccountId, input.date, input.notes ?? null,
+        ],
+      );
+      await client.query(
+        'UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE user_id = $2 AND account_id = $3',
+        [input.amount, input.userId, input.fromAccountId],
+      );
+      await client.query(
+        'UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2 AND account_id = $3',
+        [input.amount, input.userId, input.toAccountId],
+      );
+      await client.query('COMMIT');
+      return mapTransaction(rows[0] as Record<string, unknown>);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async softDelete(userId: string, transactionId: string): Promise<void> {

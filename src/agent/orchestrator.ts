@@ -1,5 +1,5 @@
 import type { CoreMessage } from 'ai';
-import type { Slice1Repos } from '../repositories/interfaces.js';
+import type { Repos } from '../repositories/interfaces.js';
 import type { AgentRunner } from './run-agent.js';
 import { buildTools } from './tools.js';
 import { isExpired, freshSession, trimTurns, extractLastTransactionId } from './orchestrator-helpers.js';
@@ -8,7 +8,7 @@ import { nowWIB } from '../domain/time.js';
 export interface HandleMessageArgs {
   text: string;
   chatId: string;
-  repos: Slice1Repos;
+  repos: Repos;
   /** Injectable runner: production uses createRunner(model); tests pass a fake. */
   run: AgentRunner;
   system: string;
@@ -47,7 +47,12 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
   // 4. Build tools (gated by onboarding state)
   const accounts = await args.repos.accounts.findAllByUserId(user.userId);
   const hasAccount = accounts.length > 0;
-  const tools = buildTools({ userId: user.userId, repos: args.repos, hasAccount });
+  const tools = buildTools({
+    userId: user.userId,
+    repos: args.repos,
+    hasAccount,
+    lastTransactionId: session.lastTransactionId,
+  });
 
   // 5. Run the agent (seam — real model in prod via createRunner; fake in tests)
   const result = await args.run({

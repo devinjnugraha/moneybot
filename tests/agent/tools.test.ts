@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { CoreTool } from 'ai';
 import { buildTools } from '../../src/agent/tools.js';
-import type { Slice1Repos } from '../../src/repositories/interfaces.js';
+import type { Repos } from '../../src/repositories/interfaces.js';
 
-function mockRepos(overrides: Partial<Slice1Repos> = {}): Slice1Repos {
+function mockRepos(overrides: Partial<Repos> = {}): Repos {
   return {
     users: { create: vi.fn(async (i: { telegramChatId: string; name: string }) => ({ userId: 'u1', telegramChatId: i.telegramChatId, name: i.name, language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '' })) } as never,
     accounts: {
@@ -16,8 +16,25 @@ function mockRepos(overrides: Partial<Slice1Repos> = {}): Slice1Repos {
     } as never,
     transactions: {
       create: vi.fn(async (i: { amount: number; description: string; categoryId?: string }) => ({ transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: i.amount, description: i.description, categoryId: i.categoryId, accountId: 'a1', isRecurringInstance: false, date: '', createdAt: '', updatedAt: '' })),
+      createTransfer: vi.fn(),
     } as never,
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
+    budgets: {
+      findByUserAndMonth: vi.fn(),
+      findByName: vi.fn(),
+      create: vi.fn(),
+      incrementSpent: vi.fn(),
+      update: vi.fn(),
+    } as never,
+    recurrings: {
+      findAllByUserId: vi.fn(),
+      findByDayOfMonth: vi.fn(),
+      findById: vi.fn(),
+      findByName: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deactivate: vi.fn(),
+    } as never,
     ...overrides,
   };
 }
@@ -27,7 +44,8 @@ type ToolCallResult = {
   missing?: string[];
   field?: string;
   matches?: unknown[];
-  data?: { transaction?: { transactionId?: string } };
+  options?: Record<string, unknown> | null;
+  data?: { transaction?: { transactionId?: string }; budget?: { spent: number; limit: number; exceeded: boolean } };
 };
 
 // CoreTool.execute is `(args, options)` and optional in AI SDK v4; route direct
@@ -117,5 +135,480 @@ describe('buildTools — create_expense (write gate)', () => {
     expect(res.status).toBe('ok');
     expect(res.data?.transaction?.transactionId).toBe('t1');
     expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -20_000);
+  });
+
+  it('resolves a budget code by name and returns overspend warning', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 520_000, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(async (_uid: string, name: string) =>
+          name === 'jajan' ? { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 480_000, createdAt: '', updatedAt: '' } : null,
+        ),
+        create: vi.fn(),
+        incrementSpent: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, {
+      description: 'bakso', amount: 40_000, accountId: 'a1', categoryId: 'food.dining', budgetCodeId: 'jajan',
+    });
+    expect(res.status).toBe('ok');
+    // budget code resolved by name + spent incremented
+    expect(repos.budgets.incrementSpent).toHaveBeenCalledWith('u1', 'b-jajan', 40_000);
+    // data.budget reflects the updated spent (480k + 40k = 520k over 500k limit)
+    expect(res.data?.budget).toEqual({ spent: 520_000, limit: 500_000, exceeded: true });
+  });
+
+  it('returns missing_fields when budget code name is unknown', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(async () => null), // never matches
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, {
+      description: 'kopi', amount: 30_000, accountId: 'a1', categoryId: 'food.coffee', budgetCodeId: 'jajan',
+    });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('budgetCodeId');
+    expect(res.options).toEqual({ monthlyBudget: null });
+  });
+});
+
+describe('buildTools — get_categories (T03)', () => {
+  it('returns all categories from the static taxonomy', async () => {
+    const repos = mockRepos();
+    const { get_categories } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_categories, {});
+    expect(Array.isArray(res)).toBe(true);
+    const arr = res as unknown as Array<{ categoryId: string }>;
+    expect(arr.length).toBeGreaterThan(0);
+    expect(arr.some((c) => c.categoryId === 'food.dining')).toBe(true);
+  });
+});
+
+describe('buildTools — get_budget_codes (T04)', () => {
+  it('returns budget codes for the user', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b1', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_budget_codes } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_budget_codes, {});
+    const arr = res as unknown as Array<{ name: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.name).toBe('Jajan');
+  });
+});
+
+describe('buildTools — get_transactions (T09)', () => {
+  it('returns transactions filtered by date range', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          { transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000, description: 'bakso', categoryId: 'food.dining', accountId: 'a1', isRecurringInstance: false, date: '2026-06-15', createdAt: '', updatedAt: '' },
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { get_transactions } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_transactions, { fromDate: '2026-06-01', toDate: '2026-06-30' });
+    const arr = res as unknown as Array<{ description: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.description).toBe('bakso');
+  });
+});
+
+describe('buildTools — get_recurring_payments (T13)', () => {
+  it('returns active recurring payments', async () => {
+    const repos = mockRepos({
+      recurrings: {
+        findAllByUserId: vi.fn(async () => [
+          { recurringId: 'r1', userId: 'u1', name: 'Netflix', amount: 159_000, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15, isActive: true, nextFireAt: '2026-06-15', createdAt: '', updatedAt: '' },
+        ]),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        deactivate: vi.fn(),
+      } as never,
+    });
+    const { get_recurring_payments } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_recurring_payments, {});
+    const arr = res as unknown as Array<{ name: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.name).toBe('Netflix');
+  });
+});
+
+describe('buildTools — get_account_balance (T16)', () => {
+  it('returns balances for all accounts when no accountId given', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' },
+          { accountId: 'a2', userId: 'u1', name: 'Mandiri', type: 'bank', balance: 50_000, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_account_balance, {});
+    const arr = res as unknown as Array<{ name: string; balance: number }>;
+    expect(arr).toHaveLength(2);
+    expect(arr[0]!.balance).toBe(100_000);
+  });
+
+  it('returns balance for a single account by accountId', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_account_balance, { accountId: 'a1' });
+    const obj = res as unknown as { balance: number };
+    expect(obj.balance).toBe(100_000);
+  });
+});
+
+describe('buildTools — create_income (T07)', () => {
+  it('records income and increases balance', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, {
+      description: 'Gaji', amount: 5_000_000, accountId: 'a1', categoryId: 'income.salary',
+    });
+    expect(res.status).toBe('ok');
+    expect(res.data?.transaction?.transactionId).toBe('t1');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 5_000_000);
+  });
+
+  it('returns ambiguous when account not found', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 0, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, {
+      description: 'Gaji', amount: 1_000, accountId: 'nonexistent', categoryId: 'income.other',
+    });
+    expect(res.status).toBe('ambiguous');
+    expect(res.field).toBe('accountId');
+  });
+});
+
+describe('buildTools — create_transfer (T08)', () => {
+  it('completes a transfer and returns ok', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) => {
+          if (id === 'a1') return { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' };
+          if (id === 'a2') return { accountId: 'a2', userId: 'u1', name: 'Mandiri', type: 'bank' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' };
+          return null;
+        }),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(async (i: { fromAccountId: string; toAccountId: string; amount: number; description: string }) => ({
+          transactionId: 't-transfer', userId: 'u1', type: 'transfer' as const, amount: i.amount, description: i.description,
+          accountId: i.fromAccountId, toAccountId: i.toAccountId, isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, {
+      fromAccountId: 'a1', toAccountId: 'a2', amount: 30_000, description: 'transfer',
+    });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.createTransfer).toHaveBeenCalled();
+  });
+
+  it('returns error when from and to accounts are the same', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, {
+      fromAccountId: 'a1', toAccountId: 'a1', amount: 10_000, description: 'same',
+    });
+    expect(res.status).toBe('error');
+  });
+});
+
+describe('buildTools — update_transaction (T10)', () => {
+  it('updates a transaction using supplied transactionId', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        update: vi.fn(async () => ({
+          transactionId: 't-edit', userId: 'u1', type: 'expense' as const, amount: 25_000,
+          description: 'bakso besar', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_transaction, {
+      transactionId: 't-edit', amount: 25_000, description: 'bakso besar',
+    });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't-edit', { amount: 25_000, description: 'bakso besar' });
+  });
+
+  it('uses lastTransactionId when transactionId is omitted', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        update: vi.fn(async () => ({
+          transactionId: 't-last', userId: 'u1', type: 'expense' as const, amount: 30_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-last',
+    });
+    const res = await callExec(update_transaction, { amount: 30_000 });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't-last', { amount: 30_000 });
+  });
+
+  it('returns missing_fields when no transactionId available', async () => {
+    const repos = mockRepos();
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_transaction, { amount: 10_000 });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('transactionId');
+  });
+});
+
+describe('buildTools — soft_delete_transaction (T11)', () => {
+  it('soft-deletes and reverses account balance (expense)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-del', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        softDelete: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-del',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 20_000);
+  });
+
+  it('reverses balance for income (subtract on delete)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-inc', userId: 'u1', type: 'income' as const, amount: 5_000_000,
+          description: 'Gaji', categoryId: 'income.salary', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        softDelete: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-inc',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -5_000_000);
+  });
+
+  it('returns error for already-deleted transaction', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-del2', userId: 'u1', type: 'expense' as const, amount: 1_000,
+          description: 'x', categoryId: 'other.misc', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: '2026-01-01',
+        })),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-del2',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('error');
+  });
+});
+
+describe('buildTools — create_budget_code (T05)', () => {
+  it('creates a budget code with defaults for month/year', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(async (i: { name: string; monthlyBudget: number }) => ({
+          budgetCodeId: 'b-new', userId: 'u1', name: i.name, monthlyBudget: i.monthlyBudget,
+          month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '',
+        })),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000 });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jajan', monthlyBudget: 500_000 }));
+  });
+});
+
+describe('buildTools — create_recurring_payment (T12)', () => {
+  it('creates a recurring payment with computed nextFireAt', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 0, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      recurrings: {
+        findAllByUserId: vi.fn(),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(async (i: { name: string; amount: number; dayOfMonth: number }) => ({
+          recurringId: 'r-new', userId: 'u1', name: i.name, amount: i.amount, accountId: 'a1',
+          categoryId: 'entertainment.streaming', dayOfMonth: i.dayOfMonth, isActive: true,
+          nextFireAt: '2026-06-15', createdAt: '', updatedAt: '',
+        })),
+        update: vi.fn(),
+        deactivate: vi.fn(),
+      } as never,
+    });
+    const { create_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_recurring_payment, {
+      name: 'Netflix', amount: 159_000, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15,
+    });
+    expect(res.status).toBe('ok');
+  });
+});
+
+describe('buildTools — deactivate_recurring_payment (T14)', () => {
+  it('deactivates a recurring payment', async () => {
+    const repos = mockRepos({
+      recurrings: {
+        findAllByUserId: vi.fn(),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(async () => ({
+          recurringId: 'r1', userId: 'u1', name: 'Netflix', amount: 159_000,
+          accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15,
+          isActive: true, nextFireAt: '2026-08-15', createdAt: '', updatedAt: '',
+        })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        deactivate: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { deactivate_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(deactivate_recurring_payment, { recurringId: 'r1' });
+    expect(res.status).toBe('ok');
+    expect(repos.recurrings.deactivate).toHaveBeenCalledWith('u1', 'r1');
   });
 });

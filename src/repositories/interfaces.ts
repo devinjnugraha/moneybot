@@ -60,6 +60,16 @@ export interface CreateRecurringPaymentInput {
   nextFireAt: string;
 }
 
+export interface CreateTransferInput {
+  userId: string;
+  amount: number;
+  fromAccountId: string;
+  toAccountId: string;
+  description: string;
+  date: string;
+  notes?: string;
+}
+
 // ---- Repository interfaces (SRS §7) ----
 
 export interface IUserRepository {
@@ -80,6 +90,7 @@ export interface IAccountRepository {
 
 export interface ITransactionRepository {
   create(input: CreateTransactionInput): Promise<Transaction>;
+  createTransfer(input: CreateTransferInput): Promise<Transaction>;
   findByDateRange(userId: string, from: string, to: string): Promise<Transaction[]>;
   findByAccountAndDateRange(
     userId: string,
@@ -123,4 +134,13 @@ export interface Slice1Repos {
   accounts: IAccountRepository;
   transactions: ITransactionRepository;
   sessions: ISessionRepository;
+}
+
+export interface Repos {
+  users: IUserRepository;
+  accounts: IAccountRepository;
+  transactions: ITransactionRepository;
+  sessions: ISessionRepository;
+  budgets: IBudgetCodeRepository;
+  recurrings: IRecurringPaymentRepository;
 }
