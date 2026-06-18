@@ -2,6 +2,7 @@ import type {
   User,
   Account,
   Transaction,
+  BudgetCode,
   SessionContext,
 } from '../../domain/entities.js';
 import type { CoreMessage } from 'ai';
@@ -70,6 +71,20 @@ export function mapTransaction(r: Row): Transaction {
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
     deletedAt: maybeStr(r, 'deleted_at'),
+  };
+}
+
+export function mapBudgetCode(r: Row): BudgetCode {
+  return {
+    budgetCodeId: str(r, 'budget_code_id'),
+    userId: str(r, 'user_id'),
+    name: str(r, 'name'),
+    monthlyBudget: num(r, 'monthly_budget'),
+    month: num(r, 'month'),
+    year: num(r, 'year'),
+    spent: num(r, 'spent'),
+    createdAt: str(r, 'created_at'),
+    updatedAt: str(r, 'updated_at'),
   };
 }
 
