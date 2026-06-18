@@ -3,6 +3,7 @@ import type {
   Account,
   Transaction,
   BudgetCode,
+  RecurringPayment,
   SessionContext,
 } from '../../domain/entities.js';
 import type { CoreMessage } from 'ai';
@@ -83,6 +84,24 @@ export function mapBudgetCode(r: Row): BudgetCode {
     month: num(r, 'month'),
     year: num(r, 'year'),
     spent: num(r, 'spent'),
+    createdAt: str(r, 'created_at'),
+    updatedAt: str(r, 'updated_at'),
+  };
+}
+
+export function mapRecurringPayment(r: Row): RecurringPayment {
+  return {
+    recurringId: str(r, 'recurring_id'),
+    userId: str(r, 'user_id'),
+    name: str(r, 'name'),
+    amount: num(r, 'amount'),
+    accountId: str(r, 'account_id'),
+    categoryId: str(r, 'category_id'),
+    budgetCodeId: maybeStr(r, 'budget_code_id'),
+    dayOfMonth: num(r, 'day_of_month'),
+    isActive: bool(r, 'is_active'),
+    lastFiredAt: maybeStr(r, 'last_fired_at'),
+    nextFireAt: str(r, 'next_fire_at'),
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
   };
