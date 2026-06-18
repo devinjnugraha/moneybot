@@ -1,0 +1,35 @@
+{
+  "name": "moneybot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "migrate": "tsx src/adapters/neon/migrate.ts",
+    "seed": "tsx src/adapters/neon/seed.ts",
+    "reconcile": "tsx scripts/reconcile.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.0",
+    "ai": "^4.0.0",
+    "dotenv": "^17.4.2",
+    "grammy": "^1.30.0",
+    "pg": "^8.13.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^9.0.0",
+    "globals": "^17.6.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^2.0.0"
+  }
+}
