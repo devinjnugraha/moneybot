@@ -534,3 +534,81 @@ describe('buildTools — soft_delete_transaction (T11)', () => {
     expect(res.status).toBe('error');
   });
 });
+
+describe('buildTools — create_budget_code (T05)', () => {
+  it('creates a budget code with defaults for month/year', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(async (i: { name: string; monthlyBudget: number }) => ({
+          budgetCodeId: 'b-new', userId: 'u1', name: i.name, monthlyBudget: i.monthlyBudget,
+          month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '',
+        })),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000 });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jajan', monthlyBudget: 500_000 }));
+  });
+});
+
+describe('buildTools — create_recurring_payment (T12)', () => {
+  it('creates a recurring payment with computed nextFireAt', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 0, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      recurrings: {
+        findAllByUserId: vi.fn(),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(async (i: { name: string; amount: number; dayOfMonth: number }) => ({
+          recurringId: 'r-new', userId: 'u1', name: i.name, amount: i.amount, accountId: 'a1',
+          categoryId: 'entertainment.streaming', dayOfMonth: i.dayOfMonth, isActive: true,
+          nextFireAt: '2026-06-15', createdAt: '', updatedAt: '',
+        })),
+        update: vi.fn(),
+        deactivate: vi.fn(),
+      } as never,
+    });
+    const { create_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_recurring_payment, {
+      name: 'Netflix', amount: 159_000, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15,
+    });
+    expect(res.status).toBe('ok');
+  });
+});
+
+describe('buildTools — deactivate_recurring_payment (T14)', () => {
+  it('deactivates a recurring payment', async () => {
+    const repos = mockRepos({
+      recurrings: {
+        findAllByUserId: vi.fn(),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(async () => ({
+          recurringId: 'r1', userId: 'u1', name: 'Netflix', amount: 159_000,
+          accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15,
+          isActive: true, nextFireAt: '2026-08-15', createdAt: '', updatedAt: '',
+        })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        deactivate: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { deactivate_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(deactivate_recurring_payment, { recurringId: 'r1' });
+    expect(res.status).toBe('ok');
+    expect(repos.recurrings.deactivate).toHaveBeenCalledWith('u1', 'r1');
+  });
+});

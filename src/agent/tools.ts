@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
 import type { AccountResult, TransactionResult, Transaction } from '../domain/entities.js';
 import { CATEGORIES } from '../domain/categories.js';
-import { todayWIB, wibMonth, wibYear } from '../domain/time.js';
+import { todayWIB, wibMonth, wibYear, nextFireDate } from '../domain/time.js';
 
 export interface BuildToolsArgs {
   userId: string;
@@ -417,6 +417,88 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         return { status: 'ok' } as TransactionResult;
       } catch (e) {
         return { status: 'error', message: (e as Error).message } as TransactionResult;
+      }
+    },
+  });
+
+  tools.create_budget_code = tool({
+    description: 'Buat budget code baru dengan alokasi bulanan. Default month/year dari WIB.',
+    parameters: z.object({
+      name: z.string(),
+      monthlyBudget: z.number().positive(),
+      month: z.number().int().min(1).max(12).optional(),
+      year: z.number().int().positive().optional(),
+    }),
+    execute: async ({ name, monthlyBudget, month, year }) => {
+      try {
+        const bc = await repos.budgets.create({
+          userId,
+          name,
+          monthlyBudget,
+          month: month ?? wibMonth(),
+          year: year ?? wibYear(),
+        });
+        return { status: 'ok', data: bc };
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message };
+      }
+    },
+  });
+
+  tools.create_recurring_payment = tool({
+    description: 'Buat jadwal pembayaran berulang bulanan. nextFireAt dihitung otomatis dari dayOfMonth.',
+    parameters: z.object({
+      name: z.string(),
+      amount: z.number().positive(),
+      accountId: z.string(),
+      categoryId: z.string(),
+      dayOfMonth: z.number().int().min(1).max(31),
+      budgetCodeId: z.string().optional(),
+    }),
+    execute: async ({ name, amount, accountId, categoryId, dayOfMonth, budgetCodeId }) => {
+      try {
+        let account = await repos.accounts.findById(userId, accountId);
+        if (!account) account = await repos.accounts.findByName(userId, accountId);
+        if (!account) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          return {
+            status: 'ambiguous',
+            field: 'accountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          };
+        }
+
+        const nextFireAt = nextFireDate(dayOfMonth);
+
+        const rp = await repos.recurrings.create({
+          userId,
+          name,
+          amount,
+          accountId: account.accountId,
+          categoryId,
+          budgetCodeId,
+          dayOfMonth,
+          nextFireAt,
+        });
+
+        return { status: 'ok', data: rp };
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message };
+      }
+    },
+  });
+
+  tools.deactivate_recurring_payment = tool({
+    description: 'Nonaktifkan (hapus) jadwal recurring payment.',
+    parameters: z.object({
+      recurringId: z.string(),
+    }),
+    execute: async ({ recurringId }) => {
+      try {
+        await repos.recurrings.deactivate(userId, recurringId);
+        return { status: 'ok' };
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message };
       }
     },
   });
