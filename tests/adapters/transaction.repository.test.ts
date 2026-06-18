@@ -65,3 +65,53 @@ describe('NeonTransactionRepository', () => {
     expect(updated.amount).toBe(25_000);
   });
 });
+
+describe('createTransfer — atomic (NFR-05)', () => {
+  async function seedTransfer() {
+    const users = new NeonUserRepository();
+    const accounts = new NeonAccountRepository();
+    const user = await users.create({ telegramChatId: 'txfr', name: 'TF' });
+    return { user, accounts };
+  }
+
+  it('creates a transfer and moves balances atomically', async () => {
+    const { user, accounts } = await seedTransfer();
+    const from = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank', openingBalance: 100_000 });
+    const to = await accounts.create({ userId: user.userId, name: 'Mandiri', type: 'bank', openingBalance: 50_000 });
+    const txns = new NeonTransactionRepository();
+    const t = await txns.createTransfer({
+      userId: user.userId,
+      amount: 30_000,
+      fromAccountId: from.accountId,
+      toAccountId: to.accountId,
+      description: 'transfer ke Mandiri',
+      date: '2026-06-18',
+    });
+    expect(t.type).toBe('transfer');
+    expect(t.amount).toBe(30_000);
+    expect(t.accountId).toBe(from.accountId);
+    expect(t.toAccountId).toBe(to.accountId);
+    const fromAfter = await accounts.findById(user.userId, from.accountId);
+    const toAfter = await accounts.findById(user.userId, to.accountId);
+    expect(fromAfter?.balance).toBe(70_000);
+    expect(toAfter?.balance).toBe(80_000);
+  });
+
+  it('rolls back both balances when the to-account does not exist', async () => {
+    const { user, accounts } = await seedTransfer();
+    const from = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank', openingBalance: 100_000 });
+    const txns = new NeonTransactionRepository();
+    await expect(
+      txns.createTransfer({
+        userId: user.userId,
+        amount: 30_000,
+        fromAccountId: from.accountId,
+        toAccountId: '00000000-0000-0000-0000-000000000000',
+        description: 'bad transfer',
+        date: '2026-06-18',
+      }),
+    ).rejects.toThrow();
+    const fromAfter = await accounts.findById(user.userId, from.accountId);
+    expect(fromAfter?.balance).toBe(100_000);
+  });
+});
