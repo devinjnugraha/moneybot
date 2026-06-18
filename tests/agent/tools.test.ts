@@ -325,3 +325,98 @@ describe('buildTools — get_account_balance (T16)', () => {
     expect(obj.balance).toBe(100_000);
   });
 });
+
+describe('buildTools — create_income (T07)', () => {
+  it('records income and increases balance', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, {
+      description: 'Gaji', amount: 5_000_000, accountId: 'a1', categoryId: 'income.salary',
+    });
+    expect(res.status).toBe('ok');
+    expect(res.data?.transaction?.transactionId).toBe('t1');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 5_000_000);
+  });
+
+  it('returns ambiguous when account not found', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 0, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, {
+      description: 'Gaji', amount: 1_000, accountId: 'nonexistent', categoryId: 'income.other',
+    });
+    expect(res.status).toBe('ambiguous');
+    expect(res.field).toBe('accountId');
+  });
+});
+
+describe('buildTools — create_transfer (T08)', () => {
+  it('completes a transfer and returns ok', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) => {
+          if (id === 'a1') return { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' };
+          if (id === 'a2') return { accountId: 'a2', userId: 'u1', name: 'Mandiri', type: 'bank' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' };
+          return null;
+        }),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(async (i: { fromAccountId: string; toAccountId: string; amount: number; description: string }) => ({
+          transactionId: 't-transfer', userId: 'u1', type: 'transfer' as const, amount: i.amount, description: i.description,
+          accountId: i.fromAccountId, toAccountId: i.toAccountId, isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, {
+      fromAccountId: 'a1', toAccountId: 'a2', amount: 30_000, description: 'transfer',
+    });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.createTransfer).toHaveBeenCalled();
+  });
+
+  it('returns error when from and to accounts are the same', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, {
+      fromAccountId: 'a1', toAccountId: 'a1', amount: 10_000, description: 'same',
+    });
+    expect(res.status).toBe('error');
+  });
+});

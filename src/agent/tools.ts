@@ -250,5 +250,108 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
     },
   });
 
+  tools.create_income = tool({
+    description: 'Catat pemasukan. Mirip create_expense tapi saldo bertambah.',
+    parameters: z.object({
+      description: z.string(),
+      amount: z.number().positive(),
+      accountId: z.string().describe('Bisa nama akun atau accountId.'),
+      categoryId: z.string(),
+      budgetCodeId: z.string().optional(),
+      date: z.string().optional().describe('YYYY-MM-DD (WIB). Default: hari ini.'),
+    }),
+    execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
+      try {
+        let account = await repos.accounts.findById(userId, accountId);
+        if (!account) account = await repos.accounts.findByName(userId, accountId);
+        if (!account) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          const res: TransactionResult = {
+            status: 'ambiguous',
+            field: 'accountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          };
+          return res;
+        }
+
+        const transaction = await repos.transactions.create({
+          userId,
+          type: 'income',
+          amount,
+          description,
+          categoryId,
+          accountId: account.accountId,
+          budgetCodeId,
+          date: date ?? todayWIB(),
+        });
+
+        await repos.accounts.updateBalance(userId, account.accountId, amount);
+
+        const res: TransactionResult = { status: 'ok', data: { transaction } };
+        return res;
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message } as TransactionResult;
+      }
+    },
+  });
+
+  tools.create_transfer = tool({
+    description: 'Pindahkan saldo antar dua akun. Bukan pemasukan atau pengeluaran — hanya perpindahan. Tidak pakai categoryId.',
+    parameters: z.object({
+      fromAccountId: z.string().describe('Akun sumber (nama atau accountId).'),
+      toAccountId: z.string().describe('Akun tujuan (nama atau accountId).'),
+      amount: z.number().positive(),
+      description: z.string(),
+      date: z.string().optional().describe('YYYY-MM-DD (WIB). Default: hari ini.'),
+      notes: z.string().optional(),
+    }),
+    execute: async ({ fromAccountId, toAccountId, amount, description, date, notes }) => {
+      try {
+        let fromAccount = await repos.accounts.findById(userId, fromAccountId);
+        if (!fromAccount) fromAccount = await repos.accounts.findByName(userId, fromAccountId);
+        if (!fromAccount) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          const res: TransactionResult = {
+            status: 'ambiguous',
+            field: 'fromAccountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          };
+          return res;
+        }
+
+        let toAccount = await repos.accounts.findById(userId, toAccountId);
+        if (!toAccount) toAccount = await repos.accounts.findByName(userId, toAccountId);
+        if (!toAccount) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          const res: TransactionResult = {
+            status: 'ambiguous',
+            field: 'toAccountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          };
+          return res;
+        }
+
+        if (fromAccount.accountId === toAccount.accountId) {
+          return { status: 'error', message: 'Akun sumber dan tujuan sama.' } as TransactionResult;
+        }
+
+        const transaction = await repos.transactions.createTransfer({
+          userId,
+          amount,
+          fromAccountId: fromAccount.accountId,
+          toAccountId: toAccount.accountId,
+          description,
+          date: date ?? todayWIB(),
+          notes,
+        });
+
+        const res: TransactionResult = { status: 'ok', data: { transaction } };
+        return res;
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message } as TransactionResult;
+      }
+    },
+  });
+
   return tools;
 }
