@@ -77,17 +77,9 @@ The plan was written before implementation. These issues were found during the b
 ## Environment & ops notes
 
 - **Platform:** Windows 11, shell is git-bash. Use forward slashes in paths; `mkdir -p` works. `LF will be replaced by CRLF` git warnings are benign.
-- **Docker is required for all repository tests** (real Postgres, no mocks — money correctness). Docker Desktop (v28.3.3) is installed but the **daemon is not always running**. To start it:
-   ```bash
-   powershell.exe -Command "Start-Process -FilePath 'C:\Program Files\Docker\Docker\Docker Desktop.exe'"
-   # then poll until ready:
-   for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 5; done
-   docker compose up -d
-   # wait for pg:
-   for i in $(seq 1 40); do docker compose exec -T postgres pg_isready -U moneybot >/dev/null 2>&1 && break; sleep 2; done
-   ```
-- **`.env`** exists locally (gitignored), copied from `.env.example` with **dummy placeholder** values. Fine for tests. **For Task 19 (smoke test) the user must put a real `TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` in `.env`.**
-- **Test harness:** `vitest.config.ts` uses `pool:'forks', singleFork:true`. `tests/global-setup.ts` runs `migrate()` + `seed()` once per run; `tests/setup.ts` truncates user-data tables `beforeEach` (categories + `_migrations` preserved). The Docker DB must be up before `npm test`.
+- **DB is Neon serverless Postgres** (local Docker removed 2026-06-16; `docker-compose.yml` deleted). `DATABASE_URL` in `.env` points at the **dev** Neon project (`ep-silent-night`); `npm test` truncates it. A separate **prod** project (`ep-summer-mud`) is migrated+seeded and used only at deploy time via a `DATABASE_URL` env override. SSL/PgBouncer/auto-suspend gotchas are documented in `docs/superpowers/specs/2026-06-16-neon-rewire-design.md`.
+- **`.env`** exists locally (gitignored) with the real Neon dev `DATABASE_URL` + real `TELEGRAM_BOT_TOKEN` + `OPENROUTER_API_KEY`. Ready for the Task 19 smoke test.
+- **Test harness:** `vitest.config.ts` uses `pool:'forks', singleFork:true`. `tests/global-setup.ts` runs `migrate()` + `seed()` once per run; `tests/setup.ts` truncates user-data tables `beforeEach` (categories + `_migrations` preserved). Neon free-tier compute auto-suspends after idle, so the first `npm test` after a pause eats a ~1–3s cold start on migrate — benign.
 - **pg date type parsers** keep DATE/TIMESTAMP as ISO strings (no `Date` objects) — WIB correctness (NFR-10).
 
 ## Verification — run these after every task

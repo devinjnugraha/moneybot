@@ -20,7 +20,8 @@ The Slice 0+1 build is mid-flight on branch `feat/slice-0-1`. **Before continuin
 ## Common commands
 
 ```bash
-docker compose up -d            # test Postgres on :5433 (Docker Desktop must be running)
+# DB: Neon serverless Postgres. DATABASE_URL (in .env) points at the dev project;
+#     `npm test` truncates it. Point DATABASE_URL at the prod URL only at deploy time.
 npm run migrate                 # apply migrations/*.sql (idempotent)
 npm run seed                    # seed categories (idempotent)
 npm test                        # vitest run (singleFork; global migrate+seed; per-test truncate)
