@@ -136,3 +136,127 @@ describe('buildTools — create_expense (write gate)', () => {
     expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -20_000);
   });
 });
+
+describe('buildTools — get_categories (T03)', () => {
+  it('returns all categories from the static taxonomy', async () => {
+    const repos = mockRepos();
+    const { get_categories } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_categories, {});
+    expect(Array.isArray(res)).toBe(true);
+    const arr = res as unknown as Array<{ categoryId: string }>;
+    expect(arr.length).toBeGreaterThan(0);
+    expect(arr.some((c) => c.categoryId === 'food.dining')).toBe(true);
+  });
+});
+
+describe('buildTools — get_budget_codes (T04)', () => {
+  it('returns budget codes for the user', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b1', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_budget_codes } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_budget_codes, {});
+    const arr = res as unknown as Array<{ name: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.name).toBe('Jajan');
+  });
+});
+
+describe('buildTools — get_transactions (T09)', () => {
+  it('returns transactions filtered by date range', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          { transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000, description: 'bakso', categoryId: 'food.dining', accountId: 'a1', isRecurringInstance: false, date: '2026-06-15', createdAt: '', updatedAt: '' },
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { get_transactions } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_transactions, { fromDate: '2026-06-01', toDate: '2026-06-30' });
+    const arr = res as unknown as Array<{ description: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.description).toBe('bakso');
+  });
+});
+
+describe('buildTools — get_recurring_payments (T13)', () => {
+  it('returns active recurring payments', async () => {
+    const repos = mockRepos({
+      recurrings: {
+        findAllByUserId: vi.fn(async () => [
+          { recurringId: 'r1', userId: 'u1', name: 'Netflix', amount: 159_000, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15, isActive: true, nextFireAt: '2026-06-15', createdAt: '', updatedAt: '' },
+        ]),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        deactivate: vi.fn(),
+      } as never,
+    });
+    const { get_recurring_payments } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_recurring_payments, {});
+    const arr = res as unknown as Array<{ name: string }>;
+    expect(arr).toHaveLength(1);
+    expect(arr[0]!.name).toBe('Netflix');
+  });
+});
+
+describe('buildTools — get_account_balance (T16)', () => {
+  it('returns balances for all accounts when no accountId given', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' },
+          { accountId: 'a2', userId: 'u1', name: 'Mandiri', type: 'bank', balance: 50_000, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_account_balance, {});
+    const arr = res as unknown as Array<{ name: string; balance: number }>;
+    expect(arr).toHaveLength(2);
+    expect(arr[0]!.balance).toBe(100_000);
+  });
+
+  it('returns balance for a single account by accountId', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_account_balance, { accountId: 'a1' });
+    const obj = res as unknown as { balance: number };
+    expect(obj.balance).toBe(100_000);
+  });
+});

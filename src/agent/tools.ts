@@ -2,7 +2,8 @@ import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
 import type { AccountResult, TransactionResult } from '../domain/entities.js';
-import { todayWIB } from '../domain/time.js';
+import { CATEGORIES } from '../domain/categories.js';
+import { todayWIB, wibMonth, wibYear } from '../domain/time.js';
 
 export interface BuildToolsArgs {
   userId: string;
@@ -62,6 +63,105 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
         balance: a.balance,
         creditLimit: a.creditLimit,
       }));
+    },
+  });
+
+  tools.get_categories = tool({
+    description: 'Daftar semua kategori sistem (pengeluaran & pemasukan).',
+    parameters: z.object({}),
+    execute: async () => {
+      return CATEGORIES.map((c) => ({
+        categoryId: c.categoryId,
+        name: c.name,
+        nameEn: c.nameEn,
+        icon: c.icon,
+        type: c.type,
+      }));
+    },
+  });
+
+  tools.get_budget_codes = tool({
+    description: 'Daftar budget codes user untuk bulan/tahun tertentu. Default: bulan ini (WIB).',
+    parameters: z.object({
+      month: z.number().int().min(1).max(12).optional(),
+      year: z.number().int().positive().optional(),
+    }),
+    execute: async ({ month, year }) => {
+      const m = month ?? wibMonth();
+      const y = year ?? wibYear();
+      const codes = await repos.budgets.findByUserAndMonth(userId, y, m);
+      return codes.map((c) => ({
+        budgetCodeId: c.budgetCodeId,
+        name: c.name,
+        monthlyBudget: c.monthlyBudget,
+        spent: c.spent,
+      }));
+    },
+  });
+
+  tools.get_transactions = tool({
+    description: 'Cari transaksi berdasarkan rentang tanggal. Bisa filter opsional: accountId, categoryId, type, limit.',
+    parameters: z.object({
+      fromDate: z.string().describe('YYYY-MM-DD'),
+      toDate: z.string().describe('YYYY-MM-DD'),
+      accountId: z.string().optional(),
+      categoryId: z.string().optional(),
+      type: z.enum(['expense', 'income', 'transfer']).optional(),
+      limit: z.number().int().positive().optional(),
+    }),
+    execute: async ({ fromDate, toDate, accountId, categoryId, type, limit }) => {
+      let rows;
+      if (accountId) {
+        rows = await repos.transactions.findByAccountAndDateRange(userId, accountId, fromDate, toDate);
+      } else {
+        rows = await repos.transactions.findByDateRange(userId, fromDate, toDate);
+      }
+      if (categoryId) rows = rows.filter((t) => t.categoryId === categoryId);
+      if (type) rows = rows.filter((t) => t.type === type);
+      if (limit) rows = rows.slice(0, limit);
+      return rows.map((t) => ({
+        transactionId: t.transactionId,
+        type: t.type,
+        amount: t.amount,
+        description: t.description,
+        categoryId: t.categoryId,
+        accountId: t.accountId,
+        date: t.date,
+        notes: t.notes,
+      }));
+    },
+  });
+
+  tools.get_recurring_payments = tool({
+    description: 'Daftar semua recurring payment yang masih aktif.',
+    parameters: z.object({}),
+    execute: async () => {
+      const recurrings = await repos.recurrings.findAllByUserId(userId);
+      return recurrings.map((r) => ({
+        recurringId: r.recurringId,
+        name: r.name,
+        amount: r.amount,
+        accountId: r.accountId,
+        categoryId: r.categoryId,
+        dayOfMonth: r.dayOfMonth,
+        nextFireAt: r.nextFireAt,
+      }));
+    },
+  });
+
+  tools.get_account_balance = tool({
+    description: 'Cek saldo satu akun (via accountId) atau semua akun.',
+    parameters: z.object({
+      accountId: z.string().optional(),
+    }),
+    execute: async ({ accountId }) => {
+      if (accountId) {
+        const acc = await repos.accounts.findById(userId, accountId);
+        if (!acc) return [];
+        return { accountId: acc.accountId, name: acc.name, balance: acc.balance };
+      }
+      const all = await repos.accounts.findAllByUserId(userId);
+      return all.map((a) => ({ accountId: a.accountId, name: a.name, balance: a.balance }));
     },
   });
 
