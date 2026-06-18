@@ -44,7 +44,8 @@ type ToolCallResult = {
   missing?: string[];
   field?: string;
   matches?: unknown[];
-  data?: { transaction?: { transactionId?: string } };
+  options?: Record<string, unknown> | null;
+  data?: { transaction?: { transactionId?: string }; budget?: { spent: number; limit: number; exceeded: boolean } };
 };
 
 // CoreTool.execute is `(args, options)` and optional in AI SDK v4; route direct
@@ -134,6 +135,70 @@ describe('buildTools — create_expense (write gate)', () => {
     expect(res.status).toBe('ok');
     expect(res.data?.transaction?.transactionId).toBe('t1');
     expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -20_000);
+  });
+
+  it('resolves a budget code by name and returns overspend warning', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 520_000, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(async (_uid: string, name: string) =>
+          name === 'jajan' ? { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 480_000, createdAt: '', updatedAt: '' } : null,
+        ),
+        create: vi.fn(),
+        incrementSpent: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, {
+      description: 'bakso', amount: 40_000, accountId: 'a1', categoryId: 'food.dining', budgetCodeId: 'jajan',
+    });
+    expect(res.status).toBe('ok');
+    // budget code resolved by name + spent incremented
+    expect(repos.budgets.incrementSpent).toHaveBeenCalledWith('u1', 'b-jajan', 40_000);
+    // data.budget reflects the updated spent (480k + 40k = 520k over 500k limit)
+    expect(res.data?.budget).toEqual({ spent: 520_000, limit: 500_000, exceeded: true });
+  });
+
+  it('returns missing_fields when budget code name is unknown', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(async () => null), // never matches
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, {
+      description: 'kopi', amount: 30_000, accountId: 'a1', categoryId: 'food.coffee', budgetCodeId: 'jajan',
+    });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('budgetCodeId');
+    expect(res.options).toEqual({ monthlyBudget: null });
   });
 });
 

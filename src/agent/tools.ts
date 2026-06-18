@@ -196,6 +196,28 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
           return res;
         }
 
+        // FR-03c: if budgetCodeId is a name (not UUID), resolve it to an ID.
+        // Budget code names are scoped per user + WIB month/year.
+        let resolvedBudgetCodeId = budgetCodeId;
+        if (budgetCodeId && !/^[0-9a-f-]{36}$/.test(budgetCodeId)) {
+          const existing = await repos.budgets.findByName(
+            userId,
+            budgetCodeId,
+            wibYear(),
+            wibMonth(),
+          );
+          if (existing) {
+            resolvedBudgetCodeId = existing.budgetCodeId;
+          } else {
+            const res: TransactionResult = {
+              status: 'missing_fields',
+              missing: ['budgetCodeId'],
+              options: { monthlyBudget: null },
+            };
+            return res;
+          }
+        }
+
         const transaction = await repos.transactions.create({
           userId,
           type: 'expense',
@@ -203,13 +225,24 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
           description,
           categoryId,
           accountId: account.accountId,
-          budgetCodeId,
+          budgetCodeId: resolvedBudgetCodeId,
           date: date ?? todayWIB(),
         });
 
         await repos.accounts.updateBalance(userId, account.accountId, -amount);
 
-        const res: TransactionResult = { status: 'ok', data: { transaction } };
+        // FR-03d: if a budget code was used, increment spent and check overspend
+        let budget: { spent: number; limit: number; exceeded: boolean } | undefined;
+        if (resolvedBudgetCodeId) {
+          await repos.budgets.incrementSpent(userId, resolvedBudgetCodeId, amount);
+          const allBudgets = await repos.budgets.findByUserAndMonth(userId, wibYear(), wibMonth());
+          const bc = allBudgets.find((b) => b.budgetCodeId === resolvedBudgetCodeId);
+          if (bc) {
+            budget = { spent: bc.spent, limit: bc.monthlyBudget, exceeded: bc.spent > bc.monthlyBudget };
+          }
+        }
+
+        const res: TransactionResult = { status: 'ok', data: { transaction, budget } };
         return res;
       } catch (e) {
         return { status: 'error', message: (e as Error).message } as TransactionResult;
