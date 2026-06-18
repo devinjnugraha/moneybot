@@ -420,3 +420,117 @@ describe('buildTools — create_transfer (T08)', () => {
     expect(res.status).toBe('error');
   });
 });
+
+describe('buildTools — update_transaction (T10)', () => {
+  it('updates a transaction using supplied transactionId', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        update: vi.fn(async () => ({
+          transactionId: 't-edit', userId: 'u1', type: 'expense' as const, amount: 25_000,
+          description: 'bakso besar', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_transaction, {
+      transactionId: 't-edit', amount: 25_000, description: 'bakso besar',
+    });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't-edit', { amount: 25_000, description: 'bakso besar' });
+  });
+
+  it('uses lastTransactionId when transactionId is omitted', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        update: vi.fn(async () => ({
+          transactionId: 't-last', userId: 'u1', type: 'expense' as const, amount: 30_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-last',
+    });
+    const res = await callExec(update_transaction, { amount: 30_000 });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't-last', { amount: 30_000 });
+  });
+
+  it('returns missing_fields when no transactionId available', async () => {
+    const repos = mockRepos();
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_transaction, { amount: 10_000 });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('transactionId');
+  });
+});
+
+describe('buildTools — soft_delete_transaction (T11)', () => {
+  it('soft-deletes and reverses account balance (expense)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-del', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        softDelete: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-del',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 20_000);
+  });
+
+  it('reverses balance for income (subtract on delete)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-inc', userId: 'u1', type: 'income' as const, amount: 5_000_000,
+          description: 'Gaji', categoryId: 'income.salary', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        softDelete: vi.fn(async () => undefined),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-inc',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -5_000_000);
+  });
+
+  it('returns error for already-deleted transaction', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-del2', userId: 'u1', type: 'expense' as const, amount: 1_000,
+          description: 'x', categoryId: 'other.misc', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: '2026-01-01',
+        })),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({
+      userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-del2',
+    });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res.status).toBe('error');
+  });
+});

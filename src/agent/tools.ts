@@ -1,7 +1,7 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
-import type { AccountResult, TransactionResult } from '../domain/entities.js';
+import type { AccountResult, TransactionResult, Transaction } from '../domain/entities.js';
 import { CATEGORIES } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear } from '../domain/time.js';
 
@@ -12,7 +12,7 @@ export interface BuildToolsArgs {
   lastTransactionId?: string;
 }
 
-export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
+export function buildTools({ userId, repos, hasAccount, lastTransactionId }: BuildToolsArgs) {
   // CoreTool is the AI SDK's broad tool type; tool() returns a compatible object.
   // We type the container once so the orchestrator's RunAgentArgs.tools matches.
   const tools = {} as Record<string, CoreTool>;
@@ -347,6 +347,74 @@ export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
 
         const res: TransactionResult = { status: 'ok', data: { transaction } };
         return res;
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message } as TransactionResult;
+      }
+    },
+  });
+
+  tools.update_transaction = tool({
+    description:
+      'Koreksi transaksi: ubah amount, description, categoryId, accountId, atau notes. ' +
+      'Kalau user bilang "koreksi tadi", pakai lastTransactionId dari konteks — tidak perlu minta transactionId.',
+    parameters: z.object({
+      transactionId: z.string().optional(),
+      amount: z.number().positive().optional(),
+      description: z.string().optional(),
+      categoryId: z.string().optional(),
+      accountId: z.string().optional(),
+      notes: z.string().optional(),
+    }),
+    execute: async (args) => {
+      try {
+        // FR-08: transactionId from model arg > lastTransactionId (from closure) > missing
+        const a = args as { transactionId?: string; amount?: number; description?: string; categoryId?: string; accountId?: string; notes?: string };
+        const transactionId = a.transactionId ?? lastTransactionId;
+        if (!transactionId) {
+          return { status: 'missing_fields', missing: ['transactionId'] } as TransactionResult;
+        }
+        const patch: Record<string, unknown> = {};
+        if (a.amount !== undefined) patch.amount = a.amount;
+        if (a.description !== undefined) patch.description = a.description;
+        if (a.categoryId !== undefined) patch.categoryId = a.categoryId;
+        if (a.accountId !== undefined) patch.accountId = a.accountId;
+        if (a.notes !== undefined) patch.notes = a.notes;
+        const updated = await repos.transactions.update(userId, transactionId, patch as Partial<Transaction>);
+        const res: TransactionResult = { status: 'ok', data: { transaction: updated } };
+        return res;
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message } as TransactionResult;
+      }
+    },
+  });
+
+  tools.soft_delete_transaction = tool({
+    description:
+      'Hapus transaksi (soft delete). Kalau user bilang "hapus tadi", pakai lastTransactionId.',
+    parameters: z.object({
+      transactionId: z.string().optional(),
+    }),
+    execute: async (args) => {
+      try {
+        const a = args as { transactionId?: string };
+        const transactionId = a.transactionId ?? lastTransactionId;
+        if (!transactionId) {
+          return { status: 'missing_fields', missing: ['transactionId'] } as TransactionResult;
+        }
+        const txn = await repos.transactions.findById(userId, transactionId);
+        if (!txn) {
+          return { status: 'error', message: 'Transaksi tidak ditemukan.' } as TransactionResult;
+        }
+        if (txn.deletedAt) {
+          return { status: 'error', message: 'Transaksi sudah dihapus.' } as TransactionResult;
+        }
+        // Reverse balance delta: expense → add back (+), income → subtract (-)
+        const delta = txn.type === 'expense' ? txn.amount : txn.type === 'income' ? -txn.amount : 0;
+        if (delta !== 0) {
+          await repos.accounts.updateBalance(userId, txn.accountId, delta);
+        }
+        await repos.transactions.softDelete(userId, transactionId);
+        return { status: 'ok' } as TransactionResult;
       } catch (e) {
         return { status: 'error', message: (e as Error).message } as TransactionResult;
       }
