@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { CoreTool } from 'ai';
 import { buildTools } from '../../src/agent/tools.js';
-import type { Slice1Repos } from '../../src/repositories/interfaces.js';
+import type { Repos } from '../../src/repositories/interfaces.js';
 
-function mockRepos(overrides: Partial<Slice1Repos> = {}): Slice1Repos {
+function mockRepos(overrides: Partial<Repos> = {}): Repos {
   return {
     users: { create: vi.fn(async (i: { telegramChatId: string; name: string }) => ({ userId: 'u1', telegramChatId: i.telegramChatId, name: i.name, language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '' })) } as never,
     accounts: {
@@ -16,8 +16,25 @@ function mockRepos(overrides: Partial<Slice1Repos> = {}): Slice1Repos {
     } as never,
     transactions: {
       create: vi.fn(async (i: { amount: number; description: string; categoryId?: string }) => ({ transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: i.amount, description: i.description, categoryId: i.categoryId, accountId: 'a1', isRecurringInstance: false, date: '', createdAt: '', updatedAt: '' })),
+      createTransfer: vi.fn(),
     } as never,
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
+    budgets: {
+      findByUserAndMonth: vi.fn(),
+      findByName: vi.fn(),
+      create: vi.fn(),
+      incrementSpent: vi.fn(),
+      update: vi.fn(),
+    } as never,
+    recurrings: {
+      findAllByUserId: vi.fn(),
+      findByDayOfMonth: vi.fn(),
+      findById: vi.fn(),
+      findByName: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deactivate: vi.fn(),
+    } as never,
     ...overrides,
   };
 }

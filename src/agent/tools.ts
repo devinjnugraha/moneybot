@@ -1,13 +1,14 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
-import type { Slice1Repos } from '../repositories/interfaces.js';
+import type { Repos } from '../repositories/interfaces.js';
 import type { AccountResult, TransactionResult } from '../domain/entities.js';
 import { todayWIB } from '../domain/time.js';
 
 export interface BuildToolsArgs {
   userId: string;
-  repos: Slice1Repos;
+  repos: Repos;
   hasAccount: boolean;
+  lastTransactionId?: string;
 }
 
 export function buildTools({ userId, repos, hasAccount }: BuildToolsArgs) {
