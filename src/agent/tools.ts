@@ -165,6 +165,92 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     },
   });
 
+  tools.get_report = tool({
+    description:
+      'Laporan agregat pengeluaran/pemasukan untuk rentang tanggal. ' +
+      'Bisa dikelompokkan per kategori atau budget code, atau difilter ke budget code tertentu. ' +
+      'Transfer SELALU dikecualikan dari laporan (FR-10e).',
+    parameters: z.object({
+      from: z.string().describe('YYYY-MM-DD (WIB), inklusif.'),
+      to: z.string().describe('YYYY-MM-DD (WIB), inklusif.'),
+      type: z.enum(['expense', 'income']).optional().default('expense'),
+      groupBy: z.enum(['category', 'budget']).optional(),
+      budgetCodeId: z.string().optional().describe('Filter ke satu budget code (untuk drill-down).'),
+    }),
+    execute: async ({ from, to, type, groupBy, budgetCodeId }) => {
+      const rows = await repos.transactions.findByDateRange(userId, from, to);
+
+      // Filter: exclude transfers + soft-deleted (findByDateRange already
+      // filters deleted_at IS NULL), match type, optionally by budgetCodeId.
+      const filtered = rows.filter((t) => {
+        if (t.type !== type) return false;
+        if (budgetCodeId && t.budgetCodeId !== budgetCodeId) return false;
+        return true;
+      });
+
+      const total = filtered.reduce((sum, t) => sum + t.amount, 0);
+      const count = filtered.length;
+
+      // When filtering by budgetCodeId, default to category grouping so the
+      // response includes a per-category breakdown of that budget.
+      const effectiveGroupBy = groupBy ?? (budgetCodeId ? 'category' : undefined);
+
+      if (!effectiveGroupBy) {
+        return { total, count, groups: undefined };
+      }
+
+      // Aggregate by groupKey
+      const groups = new Map<string, { total: number; count: number }>();
+      for (const t of filtered) {
+        const key = effectiveGroupBy === 'category'
+          ? (t.categoryId ?? '__uncategorized__')
+          : (t.budgetCodeId ?? '__none__');
+        const g = groups.get(key) ?? { total: 0, count: 0 };
+        g.total += t.amount;
+        g.count += 1;
+        groups.set(key, g);
+      }
+
+      // Build result array sorted by total descending
+      const categoryMap = new Map(CATEGORIES.map((c) => [c.categoryId, c]));
+      const budgetMap = effectiveGroupBy === 'budget'
+        ? new Map(
+            (await repos.budgets.findByUserAndMonth(
+              userId,
+              Number(from.slice(0, 4)),
+              Number(from.slice(5, 7)),
+            )).map((b) => [b.budgetCodeId, b]),
+          )
+        : new Map();
+
+      const result = Array.from(groups.entries())
+        .map(([groupKey, g]) => {
+          let label: string;
+          let icon: string | undefined;
+          if (effectiveGroupBy === 'category') {
+            const cat = groupKey !== '__uncategorized__' ? categoryMap.get(groupKey) : undefined;
+            label = cat?.name ?? 'Tanpa Kategori';
+            icon = cat?.icon;
+          } else {
+            const bc = groupKey !== '__none__' ? budgetMap.get(groupKey) : undefined;
+            label = bc?.name ?? 'Tanpa Budget';
+            icon = undefined;
+          }
+          return {
+            groupKey,
+            label,
+            icon,
+            total: g.total,
+            percentage: total > 0 ? Math.round((g.total / total) * 100) : 0,
+            count: g.count,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+
+      return { total, count, groups: result };
+    },
+  });
+
   // Gate only WRITE tools behind onboarding: no account yet → create_account +
   // get_accounts only.
   if (!hasAccount) return tools;

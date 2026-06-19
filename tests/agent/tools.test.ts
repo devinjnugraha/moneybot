@@ -40,12 +40,23 @@ function mockRepos(overrides: Partial<Repos> = {}): Repos {
 }
 
 type ToolCallResult = {
-  status: string;
+  status?: string;
   missing?: string[];
   field?: string;
   matches?: unknown[];
   options?: Record<string, unknown> | null;
   data?: { transaction?: { transactionId?: string }; budget?: { spent: number; limit: number; exceeded: boolean } };
+  // get_report (T15) read-tool fields
+  total?: number;
+  count?: number;
+  groups?: Array<{
+    groupKey: string;
+    label: string;
+    icon?: string;
+    total: number;
+    percentage: number;
+    count: number;
+  }>;
 };
 
 // CoreTool.execute is `(args, options)` and optional in AI SDK v4; route direct
@@ -610,5 +621,225 @@ describe('buildTools — deactivate_recurring_payment (T14)', () => {
     const res = await callExec(deactivate_recurring_payment, { recurringId: 'r1' });
     expect(res.status).toBe('ok');
     expect(repos.recurrings.deactivate).toHaveBeenCalledWith('u1', 'r1');
+  });
+});
+
+describe('buildTools — get_report (T15)', () => {
+  const txn = (overrides: Partial<{
+    transactionId: string; type: string; amount: number; description: string;
+    categoryId: string; accountId: string; budgetCodeId: string | null; date: string;
+  }> = {}) => ({
+    transactionId: overrides.transactionId ?? 't1',
+    userId: 'u1',
+    type: (overrides.type as 'expense' | 'income' | 'transfer') ?? 'expense',
+    amount: overrides.amount ?? 20_000,
+    description: overrides.description ?? 'bakso',
+    categoryId: overrides.categoryId ?? 'food.dining',
+    accountId: overrides.accountId ?? 'a1',
+    budgetCodeId: overrides.budgetCodeId ?? null,
+    date: overrides.date ?? '2026-06-15',
+    isRecurringInstance: false,
+    createdAt: '', updatedAt: '', notes: null, toAccountId: null, recurringId: null, deletedAt: null,
+  });
+
+  it('returns total + count for a date range (no grouping)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, categoryId: 'food.dining' }),
+          txn({ transactionId: 't2', amount: 50_000, categoryId: 'transport.ridehail' }),
+          txn({ transactionId: 't3', amount: 30_000, categoryId: 'food.dining' }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense' });
+    expect(res.total).toBe(100_000);
+    expect(res.count).toBe(3);
+    expect(res.groups).toBeUndefined();
+  });
+
+  it('groups by category and returns percentages sorted descending', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, categoryId: 'food.dining' }),
+          txn({ transactionId: 't2', amount: 70_000, categoryId: 'transport.ridehail' }),
+          txn({ transactionId: 't3', amount: 30_000, categoryId: 'food.dining' }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense', groupBy: 'category' });
+    expect(res.total).toBe(120_000);
+    expect(res.groups).toHaveLength(2);
+    // Sorted by amount desc: transport.ridehail (70k) then food.dining (50k combined)
+    expect(res.groups![0]!.groupKey).toBe('transport.ridehail');
+    expect(res.groups![0]!.total).toBe(70_000);
+    expect(res.groups![0]!.percentage).toBe(58);
+    expect(res.groups![1]!.groupKey).toBe('food.dining');
+    expect(res.groups![1]!.total).toBe(50_000);
+    expect(res.groups![1]!.percentage).toBe(42);
+  });
+
+  it('groups by budget code', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, budgetCodeId: 'b-jajan' }),
+          txn({ transactionId: 't2', amount: 80_000, budgetCodeId: 'b-jajan' }),
+          txn({ transactionId: 't3', amount: 30_000, budgetCodeId: null }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense', groupBy: 'budget' });
+    expect(res.total).toBe(130_000);
+    expect(res.groups).toHaveLength(2);
+    // "Tanpa Budget" group for null budgetCodeId
+    const withoutBudget = res.groups!.find((g: { groupKey: string }) => g.groupKey === '__none__');
+    expect(withoutBudget!.total).toBe(30_000);
+    expect(withoutBudget!.label).toBe('Tanpa Budget');
+    const jajan = res.groups!.find((g: { groupKey: string }) => g.groupKey === 'b-jajan');
+    expect(jajan!.total).toBe(100_000);
+  });
+
+  it('filters by budgetCodeId for drill-down (FR-10c)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, budgetCodeId: 'b-jajan', categoryId: 'food.dining', description: 'bakso' }),
+          txn({ transactionId: 't2', amount: 80_000, budgetCodeId: 'b-jajan', categoryId: 'shopping.online', description: 'belanja' }),
+          txn({ transactionId: 't3', amount: 30_000, budgetCodeId: 'b-family', categoryId: 'food.groceries', description: 'sayur' }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b-jajan', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 100_000, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, {
+      from: '2026-06-01', to: '2026-06-30', type: 'expense', budgetCodeId: 'b-jajan',
+    });
+    // Only the two jajan transactions included
+    expect(res.total).toBe(100_000);
+    expect(res.count).toBe(2);
+    // With budgetCodeId filter, groups are still returned for category breakdown
+    expect(res.groups).toHaveLength(2);
+  });
+
+  it('excludes transfers (FR-10e)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, type: 'expense' }),
+          txn({ transactionId: 't2', amount: 30_000, type: 'transfer' }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense' });
+    // Transfer excluded — only the expense counted
+    expect(res.total).toBe(20_000);
+    expect(res.count).toBe(1);
+  });
+
+  it('resolves category icons from CATEGORIES taxonomy', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          txn({ transactionId: 't1', amount: 20_000, categoryId: 'food.dining' }),
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => []),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_report } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense', groupBy: 'category' });
+    expect(res.groups![0]!.icon).toBe('🍜');
+    expect(res.groups![0]!.label).toBe('Makan di Luar');
   });
 });
