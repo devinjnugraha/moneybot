@@ -42,6 +42,11 @@ export function wibYear(now: Date = new Date()): number {
   return wibDateParts(now).year;
 }
 
+/** Current day (1–31) in WIB. */
+export function wibDay(now: Date = new Date()): number {
+  return wibDateParts(now).day;
+}
+
 /**
  * Next occurrence of `dayOfMonth` on or after today (WIB).
  * A day-31 subscription in February fires on Feb 28 (last-day rule).
