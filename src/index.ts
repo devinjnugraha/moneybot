@@ -6,7 +6,8 @@ import { pool } from './adapters/neon/pool.js';
 import { createRepos } from './adapters/neon/repos.js';
 import { createRunner } from './agent/run-agent.js';
 import { handleMessage } from './agent/orchestrator.js';
-import { SYSTEM_PROMPT } from './agent/system-prompt.js';
+import { buildSystemPrompt } from './agent/system-prompt.js';
+import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
 
 async function main() {
@@ -27,7 +28,7 @@ async function main() {
       chatId,
       repos,
       run,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(todayWIB()),
       contextWindowTurns: config.CONTEXT_WINDOW_TURNS,
       sessionIdleTimeoutMinutes: config.SESSION_IDLE_TIMEOUT_MINUTES,
     });
