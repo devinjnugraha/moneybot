@@ -13,6 +13,8 @@ import { handleMessage } from './agent/orchestrator.js';
 import { buildSystemPrompt } from './agent/system-prompt.js';
 import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
+import { startCronJobs } from './scheduler/cron.js';
+import { registerCallbackHandler } from './telegram/callback-query.js';
 
 async function main() {
   await migrate();
@@ -38,6 +40,9 @@ async function main() {
     });
     return reply;
   });
+
+  startCronJobs(repos);
+  registerCallbackHandler(repos);
 
   console.log('[moneybot] starting long-polling…');
   await bot.start({
