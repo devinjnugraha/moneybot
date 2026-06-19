@@ -33,4 +33,13 @@ export class NeonSessionRepository implements ISessionRepository {
   async delete(chatId: string): Promise<void> {
     await pool.query('DELETE FROM session_contexts WHERE chat_id = $1', [chatId]);
   }
+
+  async findExpiredDeferrals(): Promise<SessionContext[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM session_contexts
+       WHERE pending_recurring_confirmation IS NOT NULL
+       AND (pending_recurring_confirmation->>'expiresAt')::timestamptz <= NOW()`,
+    );
+    return rows.map((r) => mapSession(r as Record<string, unknown>));
+  }
 }

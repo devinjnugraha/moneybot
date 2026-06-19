@@ -66,4 +66,20 @@ describe('NeonSessionRepository', () => {
     await sessions.delete('1');
     expect(await sessions.get('1')).toBeNull();
   });
+
+  it('finds sessions with expired deferrals', async () => {
+    const user = await seedUser();
+    const sessions = new NeonSessionRepository();
+    // Create a session with an already-expired deferral
+    await sessions.set({
+      chatId: uniqueChatId(),
+      userId: user.userId,
+      turns: [],
+      pendingRecurringConfirmation: { recurringId: 'rp-x', expiresAt: '2020-01-01T00:00:00Z' },
+      lastActivityAt: new Date().toISOString(),
+    });
+    const expired = await sessions.findExpiredDeferrals();
+    // We should find at least our session — there may be others from prior test runs
+    expect(expired.length).toBeGreaterThanOrEqual(1);
+  });
 });

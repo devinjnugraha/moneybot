@@ -127,6 +127,8 @@ export interface ISessionRepository {
   get(chatId: string): Promise<SessionContext | null>;
   set(context: SessionContext): Promise<void>;
   delete(chatId: string): Promise<void>;
+  /** Find all sessions with an expired pendingRecurringConfirmation. */
+  findExpiredDeferrals(): Promise<SessionContext[]>;
 }
 
 /** Slice-1 repos — what's implemented so far. */
