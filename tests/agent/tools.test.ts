@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import type { CoreTool } from 'ai';
 import { buildTools } from '../../src/agent/tools.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
+import { logEvent } from '../../src/utils/logger.js';
+
+vi.mock('../../src/utils/logger.js', () => ({
+  logEvent: vi.fn(),
+}));
 
 function mockRepos(overrides: Partial<Repos> = {}): Repos {
   return {
@@ -41,6 +46,7 @@ function mockRepos(overrides: Partial<Repos> = {}): Repos {
 
 type ToolCallResult = {
   status?: string;
+  message?: string;
   missing?: string[];
   field?: string;
   matches?: unknown[];
@@ -841,5 +847,172 @@ describe('buildTools — get_report (T15)', () => {
     const res = await callExec(get_report, { from: '2026-06-01', to: '2026-06-30', type: 'expense', groupBy: 'category' });
     expect(res.groups![0]!.icon).toBe('🍜');
     expect(res.groups![0]!.label).toBe('Makan di Luar');
+  });
+});
+
+// NFR-09: every catch block returns Bahasa Indonesia, not raw Error.message
+describe('buildTools — error messages are Bahasa Indonesia (NFR-09)', () => {
+  it('createExpenseCore: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(async () => { throw new Error('SQL ERROR: connection refused'); }),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => []),
+        findByAccountAndDateRange: vi.fn(async () => []),
+        findLatestByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => null),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      accounts: {
+        findAllByUserId: vi.fn(async () => [{ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' }]),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, { description: 'bakso', amount: 20_000, accountId: 'a1', categoryId: 'food.dining' });
+    expect(res.status).toBe('error');
+    expect(res.message).toBe('Gagal mencatat pengeluaran. Coba lagi.');
+    expect(logEvent).toHaveBeenCalledWith('error', expect.any(String), expect.objectContaining({ userId: 'u1' }));
+  });
+
+  it('create_account: returns ID message on error', async () => {
+    const repos = mockRepos({
+      accounts: {
+        create: vi.fn(async () => { throw new Error('duplicate key'); }),
+      } as never,
+    });
+    const { create_account } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(create_account, { name: 'BCA', type: 'bank' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal membuat akun. Coba lagi.' });
+    expect(logEvent).toHaveBeenCalledWith('error', expect.any(String), expect.objectContaining({ userId: 'u1' }));
+  });
+
+  it('create_income: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(async () => { throw new Error('DB down'); }),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => []),
+        findByAccountAndDateRange: vi.fn(async () => []),
+        findLatestByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => null),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+      accounts: {
+        findAllByUserId: vi.fn(async () => [{ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' }]),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, { description: 'gaji', amount: 5_000_000, accountId: 'a1', categoryId: 'income.salary' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal mencatat pemasukan. Coba lagi.' });
+  });
+
+  it('create_transfer: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(async () => { throw new Error('transfer failed'); }),
+      } as never,
+      accounts: {
+        findAllByUserId: vi.fn(async () => [
+          { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' },
+          { accountId: 'a2', userId: 'u1', name: 'Cash', type: 'cash', balance: 50_000, isActive: true, createdAt: '', updatedAt: '' },
+        ]),
+        findById: vi.fn(async (userId: string, id: string) => {
+          if (id === 'a1') return { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' };
+          return { accountId: 'a2', userId: 'u1', name: 'Cash', type: 'cash', balance: 50_000, isActive: true, createdAt: '', updatedAt: '' };
+        }),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, { fromAccountId: 'a1', toAccountId: 'a2', amount: 30_000, description: 'pindahin' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal mencatat transfer. Coba lagi.' });
+  });
+
+  it('update_transaction: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        update: vi.fn(async () => { throw new Error('column does not exist'); }),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-last' });
+    const res = await callExec(update_transaction, { amount: 25_000 });
+    expect(res).toEqual({ status: 'error', message: 'Gagal memperbarui transaksi. Coba lagi.' });
+  });
+
+  it('soft_delete_transaction: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({ transactionId: 't1', userId: 'u1', type: 'expense', amount: 20_000, description: 'bakso', categoryId: 'food.dining', accountId: 'a1', isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined })),
+        softDelete: vi.fn(async () => { throw new Error('FK violation'); }),
+      } as never,
+    });
+    const { soft_delete_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-last' });
+    const res = await callExec(soft_delete_transaction, {});
+    expect(res).toEqual({ status: 'error', message: 'Gagal menghapus transaksi. Coba lagi.' });
+  });
+
+  it('create_budget_code: returns ID message on error', async () => {
+    const repos = mockRepos({
+      budgets: {
+        create: vi.fn(async () => { throw new Error('unique constraint'); }),
+      } as never,
+    });
+    const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000 });
+    expect(res).toEqual({ status: 'error', message: 'Gagal membuat budget code. Coba lagi.' });
+  });
+
+  it('create_recurring_payment: returns ID message on error', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+      } as never,
+      accounts: {
+        findAllByUserId: vi.fn(async () => [{ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' }]),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank', balance: 100_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      recurrings: {
+        create: vi.fn(async () => { throw new Error('schema mismatch'); }),
+      } as never,
+    });
+    const { create_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_recurring_payment, { name: 'Spotify', amount: 59_900, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 25 });
+    expect(res).toEqual({ status: 'error', message: 'Gagal membuat pembayaran rutin. Coba lagi.' });
+  });
+
+  it('deactivate_recurring_payment: returns ID message on error', async () => {
+    const repos = mockRepos({
+      recurrings: {
+        deactivate: vi.fn(async () => { throw new Error('not found'); }),
+      } as never,
+    });
+    const { deactivate_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(deactivate_recurring_payment, { recurringId: 'rp-x' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal menonaktifkan pembayaran rutin. Coba lagi.' });
   });
 });

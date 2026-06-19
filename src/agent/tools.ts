@@ -4,6 +4,7 @@ import type { Repos } from '../repositories/interfaces.js';
 import type { AccountResult, TransactionResult, Transaction } from '../domain/entities.js';
 import { CATEGORIES } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear, nextFireDate } from '../domain/time.js';
+import { logEvent } from '../utils/logger.js';
 
 export interface BuildToolsArgs {
   userId: string;
@@ -58,7 +59,8 @@ export async function createExpenseCore(params: {
 
     return { status: 'ok', data: { transaction, budget } };
   } catch (e) {
-    return { status: 'error', message: (e as Error).message } as TransactionResult;
+    logEvent('error', 'createExpenseCore failed', { userId: params.userId, error: (e as Error).message });
+    return { status: 'error', message: 'Gagal mencatat pengeluaran. Coba lagi.' } as TransactionResult;
   }
 }
 
@@ -91,7 +93,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         const res: AccountResult = { status: 'ok', data: account };
         return res;
       } catch (e) {
-        return { status: 'error', message: (e as Error).message } as AccountResult;
+        logEvent('error', 'create_account failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal membuat akun. Coba lagi.' } as AccountResult;
       }
     },
   });
@@ -387,7 +390,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         const res: TransactionResult = { status: 'ok', data: { transaction } };
         return res;
       } catch (e) {
-        return { status: 'error', message: (e as Error).message } as TransactionResult;
+        logEvent('error', 'create_income failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal mencatat pemasukan. Coba lagi.' } as TransactionResult;
       }
     },
   });
@@ -445,7 +449,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         const res: TransactionResult = { status: 'ok', data: { transaction } };
         return res;
       } catch (e) {
-        return { status: 'error', message: (e as Error).message } as TransactionResult;
+        logEvent('error', 'create_transfer failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal mencatat transfer. Coba lagi.' } as TransactionResult;
       }
     },
   });
@@ -480,7 +485,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         const res: TransactionResult = { status: 'ok', data: { transaction: updated } };
         return res;
       } catch (e) {
-        return { status: 'error', message: (e as Error).message } as TransactionResult;
+        logEvent('error', 'update_transaction failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal memperbarui transaksi. Coba lagi.' } as TransactionResult;
       }
     },
   });
@@ -513,7 +519,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         await repos.transactions.softDelete(userId, transactionId);
         return { status: 'ok' } as TransactionResult;
       } catch (e) {
-        return { status: 'error', message: (e as Error).message } as TransactionResult;
+        logEvent('error', 'soft_delete_transaction failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menghapus transaksi. Coba lagi.' } as TransactionResult;
       }
     },
   });
@@ -537,7 +544,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         });
         return { status: 'ok', data: bc };
       } catch (e) {
-        return { status: 'error', message: (e as Error).message };
+        logEvent('error', 'create_budget_code failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal membuat budget code. Coba lagi.' };
       }
     },
   });
@@ -580,7 +588,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
 
         return { status: 'ok', data: rp };
       } catch (e) {
-        return { status: 'error', message: (e as Error).message };
+        logEvent('error', 'create_recurring_payment failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal membuat pembayaran rutin. Coba lagi.' };
       }
     },
   });
@@ -595,7 +604,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         await repos.recurrings.deactivate(userId, recurringId);
         return { status: 'ok' };
       } catch (e) {
-        return { status: 'error', message: (e as Error).message };
+        logEvent('error', 'deactivate_recurring_payment failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menonaktifkan pembayaran rutin. Coba lagi.' };
       }
     },
   });

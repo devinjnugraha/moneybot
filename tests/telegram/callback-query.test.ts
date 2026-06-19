@@ -3,6 +3,11 @@ import { dispatchRecCallback } from '../../src/telegram/callback-query.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
 import type { CallbackActionResult } from '../../src/telegram/callback-query.js';
 import type { RecurringPayment, SessionContext } from '../../src/domain/entities.js';
+import { logEvent } from '../../src/utils/logger.js';
+
+vi.mock('../../src/utils/logger.js', () => ({
+  logEvent: vi.fn(),
+}));
 
 /** Narrow a CallbackActionResult to a variant that has `.text` (answer | edit). */
 function textOf(a: CallbackActionResult): string {
@@ -13,6 +18,7 @@ function mockRepos(overrides: {
   user?: { userId: string; telegramChatId: string } | null;
   rp?: RecurringPayment | null;
   existingSession?: SessionContext | null;
+  transactions?: Partial<Repos['transactions']>;
 } = {}): Repos {
   const user = overrides.user === undefined
     ? { userId: 'u1', telegramChatId: '123' }
@@ -45,6 +51,7 @@ function mockRepos(overrides: {
       })),
       createTransfer: vi.fn(), findByDateRange: vi.fn(), findByAccountAndDateRange: vi.fn(),
       findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn(),
+      ...overrides.transactions,
     } as never,
     sessions: {
       get: vi.fn(async () => overrides.existingSession ?? null),
@@ -135,5 +142,26 @@ describe('dispatchRecCallback', () => {
       { recurringId: 'rp-1', action: 'confirm' }, 'ghost', repos,
     );
     expect(textOf(actions[0]!)).toBe('User tidak ditemukan.');
+  });
+
+  it('confirm: returns safe message when createExpenseCore fails (NFR-09)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(async () => { throw new Error('RAW_SQL_CONNECTION_REFUSED'); }),
+        createTransfer: vi.fn(), findByDateRange: vi.fn(async () => []),
+        findByAccountAndDateRange: vi.fn(async () => []), findLatestByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => null), update: vi.fn(), softDelete: vi.fn(),
+      } as never,
+    });
+    const actions = await dispatchRecCallback(
+      { recurringId: 'rp-1', action: 'confirm' }, '123', repos,
+    );
+    const answerAction = actions.find((a) => a.kind === 'answer');
+    expect(answerAction).toBeDefined();
+    expect(textOf(answerAction!)).toBe('Gagal memproses. Coba lagi.');
+    // Must NOT leak the raw error
+    expect(textOf(answerAction!)).not.toContain('RAW_SQL');
+    expect(textOf(answerAction!)).not.toContain('CONNECTION_REFUSED');
+    expect(logEvent).toHaveBeenCalled();
   });
 });

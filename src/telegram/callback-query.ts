@@ -2,6 +2,7 @@ import { bot } from './bot.js';
 import { createExpenseCore } from '../agent/tools.js';
 import { todayWIB } from '../domain/time.js';
 import type { Repos } from '../repositories/interfaces.js';
+import { logEvent } from '../utils/logger.js';
 
 interface CallbackParts {
   recurringId: string;
@@ -71,7 +72,8 @@ export async function dispatchRecCallback(
           { kind: 'edit', text: `✅ ${rp.name} — ${rp.amount.toLocaleString('id-ID')} dicatat.` },
         ];
       }
-      return [{ kind: 'answer', text: `Gagal: ${result.status === 'error' ? result.message : 'Gagal memproses.'}`, alert: true }];
+      logEvent('error', 'callback confirm failed', { chatId, recurringId: rp.recurringId, error: result.status === 'error' ? result.message : 'unknown' });
+      return [{ kind: 'answer', text: 'Gagal memproses. Coba lagi.', alert: true }];
     }
 
     case 'defer': {
