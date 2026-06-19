@@ -4,6 +4,7 @@ import type { AgentRunner } from './run-agent.js';
 import { buildTools } from './tools.js';
 import { isExpired, freshSession, trimTurns, extractLastTransactionId } from './orchestrator-helpers.js';
 import { nowWIB } from '../domain/time.js';
+import { logEvent } from '../utils/logger.js';
 
 export interface HandleMessageArgs {
   text: string;
@@ -35,6 +36,11 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
     onboarded = true;
   }
 
+  // NFR-07: log incoming message after user resolution
+  logEvent('info', 'message received', {
+    userId: user.userId, chatId: args.chatId, onboarded, textLength: args.text.length,
+  });
+
   // 2. Load or reset session
   let session = await args.repos.sessions.get(args.chatId);
   if (!session || isExpired(session, args.sessionIdleTimeoutMinutes, nowIso)) {
@@ -55,11 +61,28 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
   });
 
   // 5. Run the agent (seam — real model in prod via createRunner; fake in tests)
-  const result = await args.run({
-    system: args.system,
-    messages,
-    tools,
-    maxSteps: 10,
+  let result;
+  try {
+    result = await args.run({
+      system: args.system,
+      messages,
+      tools,
+      maxSteps: 10,
+    });
+  } catch (err) {
+    logEvent('error', 'agent run failed', {
+      userId: user.userId, chatId: args.chatId, error: (err as Error).message,
+    });
+    throw err;
+  }
+
+  // NFR-07: log agent completion summary
+  logEvent('info', 'agent run complete', {
+    userId: user.userId,
+    chatId: args.chatId,
+    stepCount: result.toolResults.length,
+    toolNames: result.toolResults.map((t) => t.toolName),
+    replyLength: result.text.length,
   });
 
   // 6. Append response messages + trim

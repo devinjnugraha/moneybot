@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleMessage } from '../../src/agent/orchestrator.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
 import type { AgentRunner } from '../../src/agent/run-agent.js';
 import type { CoreMessage } from 'ai';
+import { logEvent } from '../../src/utils/logger.js';
+
+vi.mock('../../src/utils/logger.js', () => ({
+  logEvent: vi.fn(),
+}));
 
 function fakeRunner(reply: string, transactionId?: string): AgentRunner {
   return vi.fn(async () => {
@@ -54,6 +59,10 @@ function mockRepos(): Repos {
 }
 
 describe('handleMessage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('onboards an unknown user and replies with the onboarding prompt', async () => {
     const repos = mockRepos();
     const { reply, onboarded } = await handleMessage({
@@ -68,6 +77,9 @@ describe('handleMessage', () => {
     expect(onboarded).toBe(true);
     expect(repos.users.create).toHaveBeenCalledWith(expect.objectContaining({ telegramChatId: '999' }));
     expect(reply).toContain('MoneyBot');
+    // NFR-07: logs incoming message + agent run complete
+    expect(logEvent).toHaveBeenCalledWith('info', 'message received', expect.objectContaining({ userId: 'u1', chatId: '999' }));
+    expect(logEvent).toHaveBeenCalledWith('info', 'agent run complete', expect.objectContaining({ userId: 'u1', chatId: '999', stepCount: 0 }));
   });
 
   it('persists session turns and lastTransactionId when a write produced a transaction', async () => {
@@ -92,6 +104,10 @@ describe('handleMessage', () => {
     expect(repos.sessions.set).toHaveBeenCalledWith(expect.objectContaining({
       chatId: '1',
       lastTransactionId: 'txn-9',
+    }));
+    expect(logEvent).toHaveBeenCalledWith('info', 'agent run complete', expect.objectContaining({
+      stepCount: 1,
+      toolNames: ['create_expense'],
     }));
   });
 
