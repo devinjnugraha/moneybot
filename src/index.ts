@@ -1,3 +1,7 @@
+// Suppress punycode DEP0040 from pg dependency chain (platform-agnostic;
+// NODE_OPTIONS=--no-deprecation doesn't work through npm on Windows).
+process.noDeprecation = true;
+
 import { createOpenAI } from '@ai-sdk/openai';
 import { config } from './config/index.js';
 import { migrate } from './adapters/neon/migrate.js';

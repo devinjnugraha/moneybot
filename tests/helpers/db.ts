@@ -1,4 +1,10 @@
 import { pool } from '../../src/adapters/neon/pool.js';
+import { randomUUID } from 'node:crypto';
+
+/** Return a unique telegram chat ID for test isolation (no more hard-coded IDs). */
+export function uniqueChatId(): string {
+  return `test-${randomUUID()}`;
+}
 
 const USER_TABLES = [
   'session_contexts',

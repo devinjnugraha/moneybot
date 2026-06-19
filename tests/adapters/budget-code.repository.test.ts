@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonBudgetCodeRepository } from '../../src/adapters/neon/budget-code.repository.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seedUser() {
-  return new NeonUserRepository().create({ telegramChatId: '1', name: 'U' });
+  return new NeonUserRepository().create({ telegramChatId: uniqueChatId(), name: 'U' });
 }
 
 describe('NeonBudgetCodeRepository', () => {
@@ -38,7 +39,7 @@ describe('NeonBudgetCodeRepository', () => {
 
   it('scopes budget codes per user + month + year (isolation)', async () => {
     const userA = await seedUser();
-    const userB = await new NeonUserRepository().create({ telegramChatId: '2', name: 'B' });
+    const userB = await new NeonUserRepository().create({ telegramChatId: uniqueChatId(), name: 'B' });
     const budgets = new NeonBudgetCodeRepository();
     await budgets.create({ userId: userA.userId, name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026 });
     await budgets.create({ userId: userB.userId, name: 'Jajan', monthlyBudget: 300_000, month: 6, year: 2026 });

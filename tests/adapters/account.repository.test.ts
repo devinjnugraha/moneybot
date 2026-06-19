@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonAccountRepository } from '../../src/adapters/neon/account.repository.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seedUser() {
   const users = new NeonUserRepository();
-  return users.create({ telegramChatId: '1', name: 'U' });
+  return users.create({ telegramChatId: uniqueChatId(), name: 'U' });
 }
 
 describe('NeonAccountRepository', () => {

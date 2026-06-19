@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonSessionRepository } from '../../src/adapters/neon/session.repository.js';
 import type { CoreMessage } from 'ai';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seedUser() {
-  return new NeonUserRepository().create({ telegramChatId: '1', name: 'U' });
+  return new NeonUserRepository().create({ telegramChatId: uniqueChatId(), name: 'U' });
 }
 
 describe('NeonSessionRepository', () => {

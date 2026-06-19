@@ -3,11 +3,12 @@ import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonAccountRepository } from '../../src/adapters/neon/account.repository.js';
 import { NeonTransactionRepository } from '../../src/adapters/neon/transaction.repository.js';
 import { todayWIB } from '../../src/domain/time.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seed() {
   const users = new NeonUserRepository();
   const accounts = new NeonAccountRepository();
-  const user = await users.create({ telegramChatId: '1', name: 'U' });
+  const user = await users.create({ telegramChatId: uniqueChatId(), name: 'U' });
   const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
   return { user, acc };
 }
@@ -70,7 +71,7 @@ describe('createTransfer — atomic (NFR-05)', () => {
   async function seedTransfer() {
     const users = new NeonUserRepository();
     const accounts = new NeonAccountRepository();
-    const user = await users.create({ telegramChatId: 'txfr', name: 'TF' });
+    const user = await users.create({ telegramChatId: uniqueChatId(), name: 'TF' });
     return { user, accounts };
   }
 

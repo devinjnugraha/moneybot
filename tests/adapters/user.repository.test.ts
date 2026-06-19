@@ -1,18 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 describe('NeonUserRepository', () => {
   it('creates a user and finds them by telegram chat id', async () => {
     const repo = new NeonUserRepository();
-    const created = await repo.create({
-      telegramChatId: '111',
-      name: 'Devin',
-    });
+    const chatId = uniqueChatId();
+    const created = await repo.create({ telegramChatId: chatId, name: 'Devin' });
     expect(created.userId).toMatch(/^[0-9a-f-]{36}$/);
     expect(created.language).toBe('id');
     expect(created.timezone).toBe('Asia/Jakarta');
 
-    const found = await repo.findByTelegramChatId('111');
+    const found = await repo.findByTelegramChatId(chatId);
     expect(found?.userId).toBe(created.userId);
     expect(found?.name).toBe('Devin');
   });
@@ -24,7 +23,7 @@ describe('NeonUserRepository', () => {
 
   it('finds by id and updates name', async () => {
     const repo = new NeonUserRepository();
-    const created = await repo.create({ telegramChatId: '222', name: 'Old' });
+    const created = await repo.create({ telegramChatId: uniqueChatId(), name: 'Old' });
     const updated = await repo.update(created.userId, { name: 'New' });
     expect(updated.name).toBe('New');
     const found = await repo.findById(created.userId);

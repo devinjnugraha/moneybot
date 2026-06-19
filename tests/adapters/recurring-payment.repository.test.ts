@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonAccountRepository } from '../../src/adapters/neon/account.repository.js';
 import { NeonRecurringPaymentRepository } from '../../src/adapters/neon/recurring-payment.repository.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seed() {
   const users = new NeonUserRepository();
   const accounts = new NeonAccountRepository();
-  const user = await users.create({ telegramChatId: '1', name: 'U' });
+  const user = await users.create({ telegramChatId: uniqueChatId(), name: 'U' });
   const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
   return { user, acc };
 }
@@ -57,7 +58,8 @@ describe('NeonRecurringPaymentRepository', () => {
       accountId: acc.accountId, categoryId: 'entertainment.streaming', dayOfMonth: 1, nextFireAt: '2026-07-01',
     });
     const day1 = await recurrings.findByDayOfMonth(1);
-    expect(day1).toHaveLength(1);
+    // findByDayOfMonth is global (scheduler query); just verify ours is included
+    expect(day1.find((r) => r.name === 'Spotify')).toBeTruthy();
   });
 
   it('finds by id and by name', async () => {
