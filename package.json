@@ -18,12 +18,14 @@
     "ai": "^4.0.0",
     "dotenv": "^17.4.2",
     "grammy": "^1.30.0",
+    "node-cron": "^4.4.1",
     "pg": "^8.13.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.0",
     "eslint": "^9.0.0",
     "globals": "^17.6.0",
