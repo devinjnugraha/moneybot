@@ -12,6 +12,56 @@ export interface BuildToolsArgs {
   lastTransactionId?: string;
 }
 
+/** Core expense-creation logic shared by T06 create_expense and the
+ *  Slice 4 callback handler (confirm). All IDs must be pre-resolved. */
+export async function createExpenseCore(params: {
+  userId: string;
+  amount: number;
+  description: string;
+  categoryId: string;
+  accountId: string;
+  budgetCodeId?: string;
+  date: string;
+  isRecurringInstance?: boolean;
+  recurringId?: string;
+  repos: Repos;
+}): Promise<TransactionResult> {
+  try {
+    const transaction = await params.repos.transactions.create({
+      userId: params.userId,
+      type: 'expense',
+      amount: params.amount,
+      description: params.description,
+      categoryId: params.categoryId,
+      accountId: params.accountId,
+      budgetCodeId: params.budgetCodeId,
+      date: params.date,
+      isRecurringInstance: params.isRecurringInstance,
+      recurringId: params.recurringId,
+    });
+
+    await params.repos.accounts.updateBalance(params.userId, params.accountId, -params.amount);
+
+    let budget: { spent: number; limit: number; exceeded: boolean } | undefined;
+    if (params.budgetCodeId) {
+      await params.repos.budgets.incrementSpent(params.userId, params.budgetCodeId, params.amount);
+      const allBudgets = await params.repos.budgets.findByUserAndMonth(
+        params.userId,
+        wibYear(),
+        wibMonth(),
+      );
+      const bc = allBudgets.find((b) => b.budgetCodeId === params.budgetCodeId);
+      if (bc) {
+        budget = { spent: bc.spent, limit: bc.monthlyBudget, exceeded: bc.spent > bc.monthlyBudget };
+      }
+    }
+
+    return { status: 'ok', data: { transaction, budget } };
+  } catch (e) {
+    return { status: 'error', message: (e as Error).message } as TransactionResult;
+  }
+}
+
 export function buildTools({ userId, repos, hasAccount, lastTransactionId }: BuildToolsArgs) {
   // CoreTool is the AI SDK's broad tool type; tool() returns a compatible object.
   // We type the container once so the orchestrator's RunAgentArgs.tools matches.
@@ -268,71 +318,32 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     description: 'Catat pengeluaran. Resolve accountId via get_accounts bila ragu.',
     parameters: expenseSchema,
     execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
-      try {
-        // Resolve account: accept accountId or account name
-        let account = await repos.accounts.findById(userId, accountId);
-        if (!account) account = await repos.accounts.findByName(userId, accountId);
-        if (!account) {
-          const all = await repos.accounts.findAllByUserId(userId);
-          const res: TransactionResult = {
-            status: 'ambiguous',
-            field: 'accountId',
-            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
-          };
-          return res;
-        }
-
-        // FR-03c: if budgetCodeId is a name (not UUID), resolve it to an ID.
-        // Budget code names are scoped per user + WIB month/year.
-        let resolvedBudgetCodeId = budgetCodeId;
-        if (budgetCodeId && !/^[0-9a-f-]{36}$/.test(budgetCodeId)) {
-          const existing = await repos.budgets.findByName(
-            userId,
-            budgetCodeId,
-            wibYear(),
-            wibMonth(),
-          );
-          if (existing) {
-            resolvedBudgetCodeId = existing.budgetCodeId;
-          } else {
-            const res: TransactionResult = {
-              status: 'missing_fields',
-              missing: ['budgetCodeId'],
-              options: { monthlyBudget: null },
-            };
-            return res;
-          }
-        }
-
-        const transaction = await repos.transactions.create({
-          userId,
-          type: 'expense',
-          amount,
-          description,
-          categoryId,
-          accountId: account.accountId,
-          budgetCodeId: resolvedBudgetCodeId,
-          date: date ?? todayWIB(),
-        });
-
-        await repos.accounts.updateBalance(userId, account.accountId, -amount);
-
-        // FR-03d: if a budget code was used, increment spent and check overspend
-        let budget: { spent: number; limit: number; exceeded: boolean } | undefined;
-        if (resolvedBudgetCodeId) {
-          await repos.budgets.incrementSpent(userId, resolvedBudgetCodeId, amount);
-          const allBudgets = await repos.budgets.findByUserAndMonth(userId, wibYear(), wibMonth());
-          const bc = allBudgets.find((b) => b.budgetCodeId === resolvedBudgetCodeId);
-          if (bc) {
-            budget = { spent: bc.spent, limit: bc.monthlyBudget, exceeded: bc.spent > bc.monthlyBudget };
-          }
-        }
-
-        const res: TransactionResult = { status: 'ok', data: { transaction, budget } };
-        return res;
-      } catch (e) {
-        return { status: 'error', message: (e as Error).message } as TransactionResult;
+      // Resolve account: accept accountId or account name
+      let account = await repos.accounts.findById(userId, accountId);
+      if (!account) account = await repos.accounts.findByName(userId, accountId);
+      if (!account) {
+        const all = await repos.accounts.findAllByUserId(userId);
+        return { status: 'ambiguous', field: 'accountId', matches: all.map((a) => ({ id: a.accountId, label: a.name })) } as TransactionResult;
       }
+
+      // FR-03c: if budgetCodeId is a name (not UUID), resolve it
+      let resolvedBudgetCodeId = budgetCodeId;
+      if (budgetCodeId && !/^[0-9a-f-]{36}$/.test(budgetCodeId)) {
+        const existing = await repos.budgets.findByName(userId, budgetCodeId, wibYear(), wibMonth());
+        if (existing) {
+          resolvedBudgetCodeId = existing.budgetCodeId;
+        } else {
+          return { status: 'missing_fields', missing: ['budgetCodeId'], options: { monthlyBudget: null } } as TransactionResult;
+        }
+      }
+
+      return createExpenseCore({
+        userId, amount, description, categoryId,
+        accountId: account.accountId,
+        budgetCodeId: resolvedBudgetCodeId,
+        date: date ?? todayWIB(),
+        repos,
+      });
     },
   });
 
