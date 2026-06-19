@@ -1,5 +1,6 @@
 import { Bot } from 'grammy';
 import { config } from '../config/index.js';
+import { logEvent } from '../utils/logger.js';
 
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
@@ -13,7 +14,7 @@ export function registerMessageHandler(
       const reply = await handle(ctx.message.text, String(ctx.chat.id));
       if (reply) await ctx.reply(reply);
     } catch (err) {
-      console.error('[bot] message handler failed', err);
+      logEvent('error', 'message handler failed', { chatId: String(ctx.chat.id), error: (err as Error).message });
       await ctx.reply('Maaf, ada gangguan. Coba lagi ya.'); // NFR-09
     }
   });

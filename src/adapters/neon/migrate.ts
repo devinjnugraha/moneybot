@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pool } from './pool.js';
+import { logEvent } from '../../utils/logger.js';
 
 export async function migrate(): Promise<void> {
   const client = await pool.connect();
@@ -35,7 +36,7 @@ export async function migrate(): Promise<void> {
         await client.query(sql);
         await client.query('INSERT INTO _migrations (name) VALUES ($1)', [file]);
         await client.query('COMMIT');
-        console.log(`[migrate] applied ${file}`);
+        logEvent('info', 'migration applied', { file });
       } catch (err) {
         await client.query('ROLLBACK');
         throw err;
@@ -52,7 +53,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     .then(() => pool.end())
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error(err);
+      logEvent('error', 'migrate failed', { error: (err as Error).message });
       process.exit(1);
     });
 }

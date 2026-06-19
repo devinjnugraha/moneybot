@@ -1,6 +1,7 @@
 import { pool } from './pool.js';
 import { CATEGORIES } from '../../domain/categories.js';
 import { pathToFileURL } from 'node:url';
+import { logEvent } from '../../utils/logger.js';
 
 export async function seed(): Promise<void> {
   for (const c of CATEGORIES) {
@@ -11,7 +12,7 @@ export async function seed(): Promise<void> {
       [c.categoryId, c.name, c.nameEn, c.parentCategoryId ?? null, c.icon, c.type],
     );
   }
-  console.log(`[seed] ensured ${CATEGORIES.length} categories`);
+  logEvent('info', 'seed complete', { categoryCount: CATEGORIES.length });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
@@ -19,7 +20,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     .then(() => pool.end())
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error(err);
+      logEvent('error', 'seed failed', { error: (err as Error).message });
       process.exit(1);
     });
 }

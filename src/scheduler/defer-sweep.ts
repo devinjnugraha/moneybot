@@ -1,6 +1,7 @@
 import { bot } from '../telegram/bot.js';
 import { recurringPrompt } from '../telegram/formatter.js';
 import type { Repos } from '../repositories/interfaces.js';
+import { logEvent } from '../utils/logger.js';
 
 /**
  * Sweep expired pendingRecurringConfirmation rows and re-prompt.
@@ -40,9 +41,9 @@ export async function sweepDeferredPayments(repos: Repos): Promise<void> {
         lastActivityAt: new Date().toISOString(),
       });
 
-      console.log(`[defer-sweep] re-prompted recurringId=${recurringId} chatId=${session.chatId}`);
+      logEvent('info', 'defer re-prompted', { userId: session.userId, chatId: session.chatId, recurringId });
     } catch (err) {
-      console.error(`[defer-sweep] failed for recurringId=${recurringId}`, err);
+      logEvent('error', 'defer sweep failed', { userId: session.userId, recurringId, error: (err as Error).message });
     }
   }
 }

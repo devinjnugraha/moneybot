@@ -2,6 +2,7 @@ import { bot } from '../telegram/bot.js';
 import { recurringPrompt } from '../telegram/formatter.js';
 import { wibYear, wibMonth, wibDay } from '../domain/time.js';
 import type { Repos } from '../repositories/interfaces.js';
+import { logEvent } from '../utils/logger.js';
 
 /** Fire recurring payment prompts for all due payments today (WIB). */
 export async function fireRecurringPayments(repos: Repos): Promise<void> {
@@ -18,7 +19,7 @@ export async function fireRecurringPayments(repos: Repos): Promise<void> {
       if (!chatId) {
         const user = await repos.users.findById(rp.userId);
         if (!user) {
-          console.error(`[recurring-fire] user not found for userId=${rp.userId}`);
+          logEvent('error', 'user not found for recurring payment', { userId: rp.userId, recurringId: rp.recurringId });
           continue;
         }
         chatId = user.telegramChatId;
@@ -30,9 +31,9 @@ export async function fireRecurringPayments(repos: Repos): Promise<void> {
 
       const { text, keyboard } = recurringPrompt(rp, accountName);
       await bot.api.sendMessage(chatId, text, { reply_markup: keyboard });
-      console.log(`[recurring-fire] sent prompt for recurringId=${rp.recurringId} userId=${rp.userId}`);
+      logEvent('info', 'recurring prompt sent', { userId: rp.userId, recurringId: rp.recurringId, chatId });
     } catch (err) {
-      console.error(`[recurring-fire] failed for recurringId=${rp.recurringId}`, err);
+      logEvent('error', 'recurring prompt failed', { userId: rp.userId, recurringId: rp.recurringId, error: (err as Error).message });
     }
   }
 }

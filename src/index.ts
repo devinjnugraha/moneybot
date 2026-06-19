@@ -15,6 +15,7 @@ import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
 import { startCronJobs } from './scheduler/cron.js';
 import { registerCallbackHandler } from './telegram/callback-query.js';
+import { logEvent } from './utils/logger.js';
 
 async function main() {
   await migrate();
@@ -44,15 +45,15 @@ async function main() {
   startCronJobs(repos);
   registerCallbackHandler(repos);
 
-  console.log('[moneybot] starting long-polling…');
+  logEvent('info', 'starting long-polling');
   await bot.start({
     allowed_updates: ['message', 'callback_query'], // callback_query used in Slice 4
-    onStart: () => console.log('[moneybot] polling'),
+    onStart: () => logEvent('info', 'polling'),
   });
 }
 
 main().catch(async (err) => {
-  console.error('[moneybot] fatal', err);
+  logEvent('error', 'fatal', { error: (err as Error).message });
   await pool.end();
   process.exit(1);
 });
