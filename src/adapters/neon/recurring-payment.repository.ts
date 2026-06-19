@@ -20,6 +20,25 @@ export class NeonRecurringPaymentRepository implements IRecurringPaymentReposito
     return rows.map((r) => mapRecurringPayment(r as Record<string, unknown>));
   }
 
+  async findDueToday(wibYear: number, wibMonth: number, wibDay: number): Promise<RecurringPayment[]> {
+    const daysInMonth = new Date(wibYear, wibMonth, 0).getDate();
+    const { rows } = await pool.query(
+      `SELECT * FROM recurring_payments
+       WHERE is_active = true
+       AND (
+         day_of_month = $1
+         OR (day_of_month > $2 AND $1 = $2)
+       )
+       AND (
+         last_fired_at IS NULL
+         OR EXTRACT(MONTH FROM last_fired_at) != $3
+         OR EXTRACT(YEAR FROM last_fired_at) != $4
+       )`,
+      [wibDay, daysInMonth, wibMonth, wibYear],
+    );
+    return rows.map((r) => mapRecurringPayment(r as Record<string, unknown>));
+  }
+
   async findById(userId: string, recurringId: string): Promise<RecurringPayment | null> {
     const { rows } = await pool.query(
       'SELECT * FROM recurring_payments WHERE user_id = $1 AND recurring_id = $2',

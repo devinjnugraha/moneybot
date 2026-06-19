@@ -115,6 +115,7 @@ export interface IBudgetCodeRepository {
 export interface IRecurringPaymentRepository {
   findAllByUserId(userId: string): Promise<RecurringPayment[]>;
   findByDayOfMonth(dayOfMonth: number): Promise<RecurringPayment[]>;
+  findDueToday(wibYear: number, wibMonth: number, wibDay: number): Promise<RecurringPayment[]>;
   findById(userId: string, recurringId: string): Promise<RecurringPayment | null>;
   findByName(userId: string, name: string): Promise<RecurringPayment | null>;
   create(input: CreateRecurringPaymentInput): Promise<RecurringPayment>;
