@@ -68,7 +68,7 @@ export class NeonTransactionRepository implements ITransactionRepository {
 
   async findById(userId: string, transactionId: string): Promise<Transaction | null> {
     const { rows } = await pool.query(
-      'SELECT * FROM transactions WHERE user_id = $1 AND transaction_id = $2',
+      'SELECT * FROM transactions WHERE user_id = $1 AND transaction_id = $2 AND deleted_at IS NULL',
       [userId, transactionId],
     );
     return rows[0] ? mapTransaction(rows[0] as Record<string, unknown>) : null;
@@ -88,7 +88,7 @@ export class NeonTransactionRepository implements ITransactionRepository {
     if (patch.accountId !== undefined) { sets.push(`account_id = $${i++}`); values.push(patch.accountId); }
     if (patch.notes !== undefined) { sets.push(`notes = $${i++}`); values.push(patch.notes); }
     const { rows } = await pool.query(
-      `UPDATE transactions SET ${sets.join(', ')} WHERE user_id = $1 AND transaction_id = $2 RETURNING *`,
+      `UPDATE transactions SET ${sets.join(', ')} WHERE user_id = $1 AND transaction_id = $2 AND deleted_at IS NULL RETURNING *`,
       values,
     );
     return mapTransaction(rows[0] as Record<string, unknown>);

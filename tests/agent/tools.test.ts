@@ -531,16 +531,14 @@ describe('buildTools — soft_delete_transaction (T11)', () => {
     expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -5_000_000);
   });
 
-  it('returns error for already-deleted transaction', async () => {
+  it('returns "Transaksi tidak ditemukan" for already-deleted transaction (NFR-06)', async () => {
     const repos = mockRepos({
       transactions: {
         create: vi.fn(),
         createTransfer: vi.fn(),
-        findById: vi.fn(async () => ({
-          transactionId: 't-del2', userId: 'u1', type: 'expense' as const, amount: 1_000,
-          description: 'x', categoryId: 'other.misc', accountId: 'a1',
-          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: '2026-01-01',
-        })),
+        // findById now filters deleted_at IS NULL, so a soft-deleted txn
+        // returns null — the tool treats it as "not found".
+        findById: vi.fn(async () => null),
         softDelete: vi.fn(),
       } as never,
     });
@@ -549,6 +547,7 @@ describe('buildTools — soft_delete_transaction (T11)', () => {
     });
     const res = await callExec(soft_delete_transaction, {});
     expect(res.status).toBe('error');
+    expect(res.message).toBe('Transaksi tidak ditemukan.');
   });
 });
 

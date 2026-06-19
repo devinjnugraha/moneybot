@@ -67,6 +67,35 @@ describe('NeonTransactionRepository', () => {
   });
 });
 
+describe('soft-delete filtering (NFR-06)', () => {
+  it('findById returns null for a soft-deleted transaction', async () => {
+    const { user, acc } = await seed();
+    const txns = new NeonTransactionRepository();
+    const t = await txns.create({
+      userId: user.userId, type: 'expense', amount: 5_000,
+      description: 'kopi', categoryId: 'food.coffee',
+      accountId: acc.accountId, date: todayWIB(),
+    });
+    await txns.softDelete(user.userId, t.transactionId);
+    const found = await txns.findById(user.userId, t.transactionId);
+    expect(found).toBeNull();
+  });
+
+  it('update throws when transaction is soft-deleted (no rows match)', async () => {
+    const { user, acc } = await seed();
+    const txns = new NeonTransactionRepository();
+    const t = await txns.create({
+      userId: user.userId, type: 'expense', amount: 5_000,
+      description: 'kopi', categoryId: 'food.coffee',
+      accountId: acc.accountId, date: todayWIB(),
+    });
+    await txns.softDelete(user.userId, t.transactionId);
+    await expect(
+      txns.update(user.userId, t.transactionId, { amount: 10_000 }),
+    ).rejects.toThrow();
+  });
+});
+
 describe('createTransfer — atomic (NFR-05)', () => {
   async function seedTransfer() {
     const users = new NeonUserRepository();
