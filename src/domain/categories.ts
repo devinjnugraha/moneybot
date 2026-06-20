@@ -50,7 +50,7 @@ export const CATEGORIES: ReadonlyArray<
   { categoryId: 'life.family', name: 'Tunjangan Keluarga', nameEn: 'Family Support', icon: '👨‍👩‍👧', type: 'expense' },
   { categoryId: 'life.hobbies', name: 'Hobi', nameEn: 'Hobbies', icon: '🎨', type: 'expense' },
   { categoryId: 'life.events', name: 'Acara & Perayaan', nameEn: 'Events & Celebrations', icon: '🥳', type: 'expense' },
-  { categoryId: 'life.terea', name: 'Rokok & Tembakau', nameEn: 'Tobacco', icon: '🚬', type: 'expense' },
+  { categoryId: 'life.tobacco', name: 'Tembakau', nameEn: 'Tobacco', icon: '🚬', type: 'expense' },
   { categoryId: 'travel.accommodation', name: 'Akomodasi', nameEn: 'Accommodation', icon: '🏨', type: 'expense' },
   { categoryId: 'travel.flights', name: 'Tiket Pesawat', nameEn: 'Flights', icon: '✈️', type: 'expense' },
   { categoryId: 'travel.activities', name: 'Aktivitas Wisata', nameEn: 'Travel Activities', icon: '🗺️', type: 'expense' },
