@@ -475,12 +475,44 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         if (!transactionId) {
           return { status: 'missing_fields', missing: ['transactionId'] } as TransactionResult;
         }
+
+        // Fetch the current record (findById filters deleted_at IS NULL, so a
+        // soft-deleted txn is treated as not found).
+        const existing = await repos.transactions.findById(userId, transactionId);
+        if (!existing) {
+          return { status: 'error', message: 'Transaksi tidak ditemukan.' } as TransactionResult;
+        }
+
         const patch: Record<string, unknown> = {};
         if (a.amount !== undefined) patch.amount = a.amount;
         if (a.description !== undefined) patch.description = a.description;
         if (a.categoryId !== undefined) patch.categoryId = a.categoryId;
         if (a.accountId !== undefined) patch.accountId = a.accountId;
         if (a.notes !== undefined) patch.notes = a.notes;
+
+        // FR-08 step 6: reconcile account balance when amount or accountId changes.
+        // Only expense/income affect a single account's balance (transfers move
+        // between two accounts and are not correctable through this tool).
+        const newAmount = a.amount ?? existing.amount;
+        const newAccountId = a.accountId ?? existing.accountId;
+        const amountChanged = a.amount !== undefined && a.amount !== existing.amount;
+        const accountChanged = a.accountId !== undefined && a.accountId !== existing.accountId;
+        const balanceRelevant = existing.type === 'expense' || existing.type === 'income';
+        if (balanceRelevant && (amountChanged || accountChanged)) {
+          // signed effect of recording: expense → -amount, income → +amount
+          const signed = (type: string, amount: number) =>
+            type === 'expense' ? -amount : type === 'income' ? amount : 0;
+          // reverse the original effect on the original account, then apply the
+          // new effect on the (possibly different) account.
+          await repos.accounts.updateBalance(userId, existing.accountId, -signed(existing.type, existing.amount));
+          await repos.accounts.updateBalance(userId, newAccountId, signed(existing.type, newAmount));
+        }
+
+        // FR-08 step 7: reconcile budget spent when a budgeted expense's amount changes.
+        if (existing.budgetCodeId && amountChanged && a.amount !== undefined) {
+          await repos.budgets.incrementSpent(userId, existing.budgetCodeId, a.amount - existing.amount);
+        }
+
         const updated = await repos.transactions.update(userId, transactionId, patch as Partial<Transaction>);
         const res: TransactionResult = { status: 'ok', data: { transaction: updated } };
         return res;

@@ -444,6 +444,11 @@ describe('buildTools — update_transaction (T10)', () => {
       transactions: {
         create: vi.fn(),
         createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-edit', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
         update: vi.fn(async () => ({
           transactionId: 't-edit', userId: 'u1', type: 'expense' as const, amount: 25_000,
           description: 'bakso besar', categoryId: 'food.dining', accountId: 'a1',
@@ -464,6 +469,11 @@ describe('buildTools — update_transaction (T10)', () => {
       transactions: {
         create: vi.fn(),
         createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't-last', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
         update: vi.fn(async () => ({
           transactionId: 't-last', userId: 'u1', type: 'expense' as const, amount: 30_000,
           description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
@@ -485,6 +495,101 @@ describe('buildTools — update_transaction (T10)', () => {
     const res = await callExec(update_transaction, { amount: 10_000 });
     expect(res.status).toBe('missing_fields');
     expect(res.missing).toContain('transactionId');
+  });
+
+  it('returns "tidak ditemukan" when the transaction does not exist (or is soft-deleted)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => null),
+        update: vi.fn(),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't-x' });
+    const res = await callExec(update_transaction, { amount: 10_000 });
+    expect(res.status).toBe('error');
+    expect(res.message).toBe('Transaksi tidak ditemukan.');
+  });
+
+  // FR-08 step 6: balance reconciliation when amount/accountId changes
+  it('reverses old balance and applies new when an expense amount changes', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        update: vi.fn(async () => ({}) as never),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't1' });
+    await callExec(update_transaction, { amount: 25_000 });
+    // reverse original expense (+20_000 on a1), apply new (-25_000 on a1)
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 20_000);
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', -25_000);
+  });
+
+  it('moves the balance when accountId changes (reverse old, apply new account)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        update: vi.fn(async () => ({}) as never),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't1' });
+    await callExec(update_transaction, { accountId: 'a2' });
+    // reverse on old account (+20_000), apply on new account (-20_000)
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a1', 20_000);
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'a2', -20_000);
+  });
+
+  it('reconciles budget spent when a budgeted expense amount changes (FR-08 step 7)', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1', budgetCodeId: 'b-jajan',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        update: vi.fn(async () => ({}) as never),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't1' });
+    await callExec(update_transaction, { amount: 25_000 });
+    // delta = new - old = 5_000
+    expect(repos.budgets.incrementSpent).toHaveBeenCalledWith('u1', 'b-jajan', 5_000);
+  });
+
+  it('does NOT touch balance or budget when only description/categoryId changes', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        update: vi.fn(async () => ({}) as never),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't1' });
+    await callExec(update_transaction, { description: 'mie ayam', categoryId: 'food.dining' });
+    expect(repos.accounts.updateBalance).not.toHaveBeenCalled();
+    expect(repos.budgets.incrementSpent).not.toHaveBeenCalled();
+    expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't1', { description: 'mie ayam', categoryId: 'food.dining' });
   });
 });
 
