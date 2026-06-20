@@ -1165,7 +1165,7 @@ describe('buildTools — update_profile', () => {
     const { update_profile } = buildTools({ userId: 'u1', repos, hasAccount: false });
     const res = await callExec(update_profile, {});
     expect(res.status).toBe('missing_fields');
-    expect(res.missing).toContain('name');
+    expect(res.missing).toEqual(['name', 'language', 'timezone']);
   });
 
   it('returns Bahasa error when the repo throws (NFR-09)', async () => {

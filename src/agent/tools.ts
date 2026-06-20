@@ -1,7 +1,7 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
-import type { AccountResult, TransactionResult, Transaction } from '../domain/entities.js';
+import type { AccountResult, TransactionResult, Transaction, User } from '../domain/entities.js';
 import { CATEGORIES } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear, nextFireDate } from '../domain/time.js';
 import { logEvent } from '../utils/logger.js';
@@ -229,14 +229,14 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     }),
     execute: async ({ name, language, timezone }) => {
       if (!name && !language && !timezone) {
-        return { status: 'missing_fields', missing: ['name'] };
+        return { status: 'missing_fields', missing: ['name', 'language', 'timezone'] };
       }
       try {
         const patch: Record<string, unknown> = {};
         if (name !== undefined) patch.name = name;
         if (language !== undefined) patch.language = language;
         if (timezone !== undefined) patch.timezone = timezone;
-        const updated = await repos.users.update(userId, patch);
+        const updated = await repos.users.update(userId, patch as Partial<User>);
         return { status: 'ok', data: updated };
       } catch (e) {
         logEvent('error', 'update_profile failed', { userId, error: (e as Error).message });
