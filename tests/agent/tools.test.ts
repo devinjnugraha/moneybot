@@ -1125,3 +1125,52 @@ describe('buildTools — error messages are Bahasa Indonesia (NFR-09)', () => {
     expect(res).toEqual({ status: 'error', message: 'Gagal menonaktifkan pembayaran rutin. Coba lagi.' });
   });
 });
+
+describe('buildTools — remember_preference / forget_preference', () => {
+  it('remember_preference upserts and returns ok', async () => {
+    const repos = mockRepos();
+    (repos.preferences.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', key: 'default_account', value: 'BCA', updatedAt: '2026-06-20T00:00:00Z',
+    });
+    const { remember_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(remember_preference, { key: 'default_account', value: 'BCA' });
+    expect(res.status).toBe('ok');
+    expect(res.data).toEqual({ key: 'default_account', value: 'BCA', updatedAt: '2026-06-20T00:00:00Z' });
+    expect(repos.preferences.upsert).toHaveBeenCalledWith('u1', 'default_account', 'BCA');
+  });
+
+  it('remember_preference returns missing_fields for an empty key', async () => {
+    const repos = mockRepos();
+    const { remember_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(remember_preference, { key: '   ', value: 'x' });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('key');
+    expect(repos.preferences.upsert).not.toHaveBeenCalled();
+  });
+
+  it('remember_preference returns Bahasa error when the repo throws (NFR-09)', async () => {
+    const repos = mockRepos();
+    (repos.preferences.upsert as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('SQL CONNECTION LOST'));
+    const { remember_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(remember_preference, { key: 'k', value: 'v' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal menyimpan preferensi. Coba lagi.' });
+    expect(logEvent).toHaveBeenCalledWith('error', expect.any(String), expect.objectContaining({ userId: 'u1' }));
+  });
+
+  it('forget_preference deletes and returns ok (idempotent semantics)', async () => {
+    const repos = mockRepos();
+    const { forget_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(forget_preference, { key: 'default_account' });
+    expect(res.status).toBe('ok');
+    expect(res.data).toEqual({ key: 'default_account' });
+    expect(repos.preferences.delete).toHaveBeenCalledWith('u1', 'default_account');
+  });
+
+  it('forget_preference returns Bahasa error when the repo throws (NFR-09)', async () => {
+    const repos = mockRepos();
+    (repos.preferences.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('BOOM'));
+    const { forget_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(forget_preference, { key: 'k' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal menghapus preferensi. Coba lagi.' });
+  });
+});

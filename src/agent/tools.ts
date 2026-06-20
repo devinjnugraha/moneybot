@@ -218,6 +218,50 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     },
   });
 
+  tools.remember_preference = tool({
+    description:
+      'Simpan preferensi user (akun favorit, tanggal gajian, kebiasaan kategorisasi, dll.). ' +
+      'Upsert by key — kalau key sudah ada, nilainya diganti. Pakai key singkat yang deskriptif, ' +
+      'simpan nilai singkat saja.',
+    parameters: z.object({
+      key: z.string().describe('Label singkat, mis. "default_account", "salary_day"'),
+      value: z.string().describe('Nilai preferensi bebas'),
+    }),
+    execute: async ({ key, value }) => {
+      const trimmedKey = key.trim();
+      if (!trimmedKey) {
+        return { status: 'missing_fields', missing: ['key'] };
+      }
+      try {
+        const pref = await repos.preferences.upsert(userId, trimmedKey, value);
+        return { status: 'ok', data: { key: pref.key, value: pref.value, updatedAt: pref.updatedAt } };
+      } catch (e) {
+        logEvent('error', 'remember_preference failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menyimpan preferensi. Coba lagi.' };
+      }
+    },
+  });
+
+  tools.forget_preference = tool({
+    description: 'Hapus preferensi user by key. Idempoten — aman dipanggil walau key tidak ada.',
+    parameters: z.object({
+      key: z.string(),
+    }),
+    execute: async ({ key }) => {
+      const trimmedKey = key.trim();
+      if (!trimmedKey) {
+        return { status: 'missing_fields', missing: ['key'] };
+      }
+      try {
+        await repos.preferences.delete(userId, trimmedKey);
+        return { status: 'ok', data: { key: trimmedKey } };
+      } catch (e) {
+        logEvent('error', 'forget_preference failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menghapus preferensi. Coba lagi.' };
+      }
+    },
+  });
+
   tools.get_report = tool({
     description:
       'Laporan agregat pengeluaran/pemasukan untuk rentang tanggal. ' +
