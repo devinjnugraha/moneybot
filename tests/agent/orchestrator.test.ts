@@ -13,7 +13,7 @@ function fakeRunner(reply: string, transactionId?: string): AgentRunner {
   return vi.fn(async () => {
     const responseMessages: CoreMessage[] = [{ role: 'assistant', content: reply }];
     const toolResults = transactionId
-      ? [{ toolName: 'create_expense', result: { status: 'ok', data: { transaction: { transactionId } } } }]
+      ? [{ toolName: 'create_expense', args: { description: 'test', amount: 10000 }, result: { status: 'ok', data: { transaction: { transactionId } } } }]
       : [];
     return { text: reply, responseMessages, toolResults };
   });

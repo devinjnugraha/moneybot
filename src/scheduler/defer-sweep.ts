@@ -32,7 +32,7 @@ export async function sweepDeferredPayments(repos: Repos): Promise<void> {
       const accountName = account?.name ?? rp.accountId;
 
       const { text, keyboard } = recurringPrompt(rp, accountName);
-      await bot.api.sendMessage(session.chatId, text, { reply_markup: keyboard });
+      await bot.api.sendMessage(session.chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
 
       // Clear pending so this defers at most once
       await repos.sessions.set({

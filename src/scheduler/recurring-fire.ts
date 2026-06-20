@@ -30,7 +30,7 @@ export async function fireRecurringPayments(repos: Repos): Promise<void> {
       const accountName = account?.name ?? rp.accountId;
 
       const { text, keyboard } = recurringPrompt(rp, accountName);
-      await bot.api.sendMessage(chatId, text, { reply_markup: keyboard });
+      await bot.api.sendMessage(chatId, text, { reply_markup: keyboard, parse_mode: 'HTML' });
       logEvent('info', 'recurring prompt sent', { userId: rp.userId, recurringId: rp.recurringId, chatId });
     } catch (err) {
       logEvent('error', 'recurring prompt failed', { userId: rp.userId, recurringId: rp.recurringId, error: (err as Error).message });

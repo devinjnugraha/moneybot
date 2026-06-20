@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatIDR, recurringPrompt } from '../../src/telegram/formatter.js';
+import { formatIDR, recurringPrompt, markdownToTelegramHTML } from '../../src/telegram/formatter.js';
 import type { RecurringPayment } from '../../src/domain/entities.js';
 import type { InlineKeyboardButton } from '@grammyjs/types';
 
@@ -48,5 +48,63 @@ describe('recurringPrompt', () => {
     expect(b1.callback_data).toBe('rec:rp-1:defer');
     expect(b2.text).toBe('⏭️ Lewati bulan ini');
     expect(b2.callback_data).toBe('rec:rp-1:skip');
+  });
+});
+
+describe('markdownToTelegramHTML', () => {
+  it('converts **bold** to <b>bold</b>', () => {
+    expect(markdownToTelegramHTML('**Bakso**'))
+      .toBe('<b>Bakso</b>');
+  });
+
+  it('converts *italic* to <i>italic</i>', () => {
+    expect(markdownToTelegramHTML('ini *miring* ya'))
+      .toBe('ini <i>miring</i> ya');
+  });
+
+  it('handles both bold and italic in one string', () => {
+    expect(markdownToTelegramHTML('**Bakso** — *enak*'))
+      .toBe('<b>Bakso</b> — <i>enak</i>');
+  });
+
+  it('converts `code` to <code>code</code>', () => {
+    expect(markdownToTelegramHTML('pakai `get_report` ya'))
+      .toBe('pakai <code>get_report</code> ya');
+  });
+
+  it('converts [text](url) to <a> link', () => {
+    expect(markdownToTelegramHTML('lihat [Google](https://google.com)'))
+      .toBe('lihat <a href="https://google.com">Google</a>');
+  });
+
+  it('escapes HTML entities', () => {
+    expect(markdownToTelegramHTML('a < b & c > d'))
+      .toBe('a &lt; b &amp; c &gt; d');
+  });
+
+  it('escapes HTML before converting Markdown (no double-escape)', () => {
+    expect(markdownToTelegramHTML('**hal < 5**'))
+      .toBe('<b>hal &lt; 5</b>');
+  });
+
+  it('leaves plain text unchanged', () => {
+    expect(markdownToTelegramHTML('Halo, apa kabar?'))
+      .toBe('Halo, apa kabar?');
+  });
+
+  it('handles real agent output with multiple formats', () => {
+    const agentOutput =
+      '**Bakso** — 20.000 dibebankan ke akun **BCA** (kategori **Makan di Luar**).\n' +
+      'Saldo BCA sekarang: 0 − 20.000 = −20.000.';
+    const result = markdownToTelegramHTML(agentOutput);
+    expect(result).toContain('<b>Bakso</b>');
+    expect(result).toContain('<b>BCA</b>');
+    expect(result).toContain('<b>Makan di Luar</b>');
+    expect(result).not.toContain('**');
+  });
+
+  it('handles ** spanning across words', () => {
+    expect(markdownToTelegramHTML('**Catatan Pengeluaran**'))
+      .toBe('<b>Catatan Pengeluaran</b>');
   });
 });

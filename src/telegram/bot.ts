@@ -1,6 +1,7 @@
 import { Bot } from 'grammy';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
+import { markdownToTelegramHTML } from './formatter.js';
 
 export const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
@@ -12,10 +13,10 @@ export function registerMessageHandler(
     await ctx.replyWithChatAction('typing');
     try {
       const reply = await handle(ctx.message.text, String(ctx.chat.id));
-      if (reply) await ctx.reply(reply);
+      if (reply) await ctx.reply(markdownToTelegramHTML(reply), { parse_mode: 'HTML' });
     } catch (err) {
       logEvent('error', 'message handler failed', { chatId: String(ctx.chat.id), error: (err as Error).message });
-      await ctx.reply('Maaf, ada gangguan. Coba lagi ya.'); // NFR-09
+      await ctx.reply('Maaf, ada gangguan. Coba lagi ya.', { parse_mode: 'HTML' }); // NFR-09
     }
   });
 }

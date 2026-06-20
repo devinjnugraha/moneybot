@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { NeonUserRepository } from '../../src/adapters/neon/user.repository.js';
 import { NeonAccountRepository } from '../../src/adapters/neon/account.repository.js';
 import { NeonRecurringPaymentRepository } from '../../src/adapters/neon/recurring-payment.repository.js';
-import { uniqueChatId, resetDb } from '../helpers/db.js';
+import { uniqueChatId } from '../helpers/db.js';
 
 async function seed() {
   const users = new NeonUserRepository();
@@ -111,10 +111,9 @@ describe('NeonRecurringPaymentRepository', () => {
 });
 
 describe('findDueToday — day-of-month overflow', () => {
-  beforeEach(async () => {
-    await resetDb();
-  });
-
+  /** Each test creates a unique user so its records are identifiable in the
+   *  global findDueToday result.  No resetDb — isolation comes from filtering
+   *  by the test's own known identifiers. */
   async function seedUser() {
     return new NeonUserRepository().create({ telegramChatId: uniqueChatId(), name: 'U' });
   }
@@ -124,14 +123,14 @@ describe('findDueToday — day-of-month overflow', () => {
     const accounts = new NeonAccountRepository();
     const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
     const recurrings = new NeonRecurringPaymentRepository();
-    await recurrings.create({
+    const rp = await recurrings.create({
       userId: user.userId, name: 'Spotify', amount: 54_990,
       accountId: acc.accountId, categoryId: 'entertainment.streaming',
       dayOfMonth: 15, nextFireAt: '2026-06-15',
     });
     const due = await recurrings.findDueToday(2026, 6, 15);
-    expect(due).toHaveLength(1);
-    expect(due[0]!.name).toBe('Spotify');
+    expect(due.filter((r) => r.recurringId === rp.recurringId)).toHaveLength(1);
+    expect(due.filter((r) => r.recurringId === rp.recurringId)[0]!.name).toBe('Spotify');
   });
 
   it('does not return a payment that already fired this month', async () => {
@@ -146,7 +145,7 @@ describe('findDueToday — day-of-month overflow', () => {
     });
     await recurrings.update(user.userId, rp.recurringId, { lastFiredAt: '2026-06-15' });
     const due = await recurrings.findDueToday(2026, 6, 20);
-    expect(due).toHaveLength(0);
+    expect(due.filter((r) => r.recurringId === rp.recurringId)).toHaveLength(0);
   });
 
   it('fires on last day of month for dayOfMonth=31 in February', async () => {
@@ -154,13 +153,13 @@ describe('findDueToday — day-of-month overflow', () => {
     const accounts = new NeonAccountRepository();
     const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
     const recurrings = new NeonRecurringPaymentRepository();
-    await recurrings.create({
+    const rp = await recurrings.create({
       userId: user.userId, name: 'Day31Sub', amount: 100_000,
       accountId: acc.accountId, categoryId: 'entertainment.streaming',
       dayOfMonth: 31, nextFireAt: '2026-02-28',
     });
     const due = await recurrings.findDueToday(2026, 2, 28);
-    expect(due.find((r) => r.name === 'Day31Sub')).toBeTruthy();
+    expect(due.some((r) => r.recurringId === rp.recurringId)).toBe(true);
   });
 
   it('does not fire day-31 payment on a normal March 28', async () => {
@@ -168,13 +167,13 @@ describe('findDueToday — day-of-month overflow', () => {
     const accounts = new NeonAccountRepository();
     const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
     const recurrings = new NeonRecurringPaymentRepository();
-    await recurrings.create({
+    const rp = await recurrings.create({
       userId: user.userId, name: 'Day31Sub', amount: 100_000,
       accountId: acc.accountId, categoryId: 'entertainment.streaming',
       dayOfMonth: 31, nextFireAt: '2026-03-31',
     });
     const due = await recurrings.findDueToday(2026, 3, 28);
-    expect(due).toHaveLength(0);
+    expect(due.filter((r) => r.recurringId === rp.recurringId)).toHaveLength(0);
   });
 
   it('excludes inactive payments', async () => {
@@ -189,6 +188,6 @@ describe('findDueToday — day-of-month overflow', () => {
     });
     await recurrings.deactivate(user.userId, rp.recurringId);
     const due = await recurrings.findDueToday(2026, 6, 15);
-    expect(due).toHaveLength(0);
+    expect(due.filter((r) => r.recurringId === rp.recurringId)).toHaveLength(0);
   });
 });

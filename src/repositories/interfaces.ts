@@ -139,14 +139,6 @@ export interface IUserPreferenceRepository {
   delete(userId: string, key: string): Promise<void>;
 }
 
-/** Slice-1 repos — what's implemented so far. */
-export interface Slice1Repos {
-  users: IUserRepository;
-  accounts: IAccountRepository;
-  transactions: ITransactionRepository;
-  sessions: ISessionRepository;
-}
-
 export interface Repos {
   users: IUserRepository;
   accounts: IAccountRepository;
