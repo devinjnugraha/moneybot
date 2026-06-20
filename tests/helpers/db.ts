@@ -11,6 +11,7 @@ const USER_TABLES = [
   'transactions',
   'budget_codes',
   'recurring_payments',
+  'user_preferences',
   'accounts',
   'users',
 ];

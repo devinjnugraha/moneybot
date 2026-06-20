@@ -5,6 +5,7 @@ import type {
   BudgetCode,
   RecurringPayment,
   SessionContext,
+  UserPreference,
   AccountType,
   TransactionType,
 } from '../domain/entities.js';
@@ -129,6 +130,13 @@ export interface ISessionRepository {
   delete(chatId: string): Promise<void>;
   /** Find all sessions with an expired pendingRecurringConfirmation. */
   findExpiredDeferrals(): Promise<SessionContext[]>;
+}
+
+export interface IUserPreferenceRepository {
+  findAllByUserId(userId: string): Promise<UserPreference[]>;
+  upsert(userId: string, key: string, value: string): Promise<UserPreference>;
+  /** Idempotent: deleting a missing key is a no-op. */
+  delete(userId: string, key: string): Promise<void>;
 }
 
 /** Slice-1 repos — what's implemented so far. */

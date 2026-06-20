@@ -5,6 +5,7 @@ import type {
   BudgetCode,
   RecurringPayment,
   SessionContext,
+  UserPreference,
 } from '../../domain/entities.js';
 import type { CoreMessage } from 'ai';
 
@@ -120,5 +121,14 @@ export function mapSession(r: Row): SessionContext {
     lastTransactionId: maybeStr(r, 'last_transaction_id'),
     pendingRecurringConfirmation: pending ?? undefined,
     lastActivityAt: str(r, 'last_activity_at'),
+  };
+}
+
+export function mapUserPreference(r: Row): UserPreference {
+  return {
+    userId: str(r, 'user_id'),
+    key: str(r, 'key'),
+    value: str(r, 'value'),
+    updatedAt: str(r, 'updated_at'),
   };
 }
