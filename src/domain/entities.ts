@@ -81,6 +81,13 @@ export interface RecurringPayment {
   updatedAt: string;
 }
 
+export interface UserPreference {
+  userId: string;
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
 export interface SessionContext {
   chatId: string;
   userId: string;
