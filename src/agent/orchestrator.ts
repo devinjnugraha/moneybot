@@ -32,7 +32,7 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
   let user = await args.repos.users.findByTelegramChatId(args.chatId);
   let onboarded = false;
   if (!user) {
-    user = await args.repos.users.create({ telegramChatId: args.chatId, name: 'Teman' });
+    user = await args.repos.users.create({ telegramChatId: args.chatId, name: '' });
     onboarded = true;
   }
 

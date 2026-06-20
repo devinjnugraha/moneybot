@@ -80,6 +80,9 @@ describe('handleMessage', () => {
       sessionIdleTimeoutMinutes: 30,
     });
     expect(onboarded).toBe(true);
+    // Verify user is created with empty name — the LLM collects it via conversation
+    const createCall = (repos.users.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { name: string };
+    expect(createCall.name).toBe('');
     expect(repos.users.create).toHaveBeenCalledWith(expect.objectContaining({ telegramChatId: '999' }));
     expect(reply).toContain('MoneyBot');
     // NFR-07: logs incoming message + agent run complete
