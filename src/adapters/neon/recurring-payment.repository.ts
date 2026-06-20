@@ -3,6 +3,9 @@ import { mapRecurringPayment } from './mappers.js';
 import type { IRecurringPaymentRepository, CreateRecurringPaymentInput } from '../../repositories/interfaces.js';
 import type { RecurringPayment } from '../../domain/entities.js';
 
+/** Loose UUID v4 shape check — catches non-UUID strings before they hit a UUID-typed column. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class NeonRecurringPaymentRepository implements IRecurringPaymentRepository {
   async findAllByUserId(userId: string): Promise<RecurringPayment[]> {
     const { rows } = await pool.query(
@@ -40,6 +43,12 @@ export class NeonRecurringPaymentRepository implements IRecurringPaymentReposito
   }
 
   async findById(userId: string, recurringId: string): Promise<RecurringPayment | null> {
+    // Defensive: reject non-UUID strings before they reach Postgres.
+    // JSONB columns (session_contexts.pending_recurring_confirmation) accept
+    // arbitrary strings, but recurring_id is UUID-typed.  A malformed $2
+    // would throw 22P02 and break the caller's control flow.
+    if (!UUID_RE.test(recurringId)) return null;
+
     const { rows } = await pool.query(
       'SELECT * FROM recurring_payments WHERE user_id = $1 AND recurring_id = $2',
       [userId, recurringId],

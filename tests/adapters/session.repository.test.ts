@@ -75,7 +75,7 @@ describe('NeonSessionRepository', () => {
       chatId: uniqueChatId(),
       userId: user.userId,
       turns: [],
-      pendingRecurringConfirmation: { recurringId: 'rp-x', expiresAt: '2020-01-01T00:00:00Z' },
+      pendingRecurringConfirmation: { recurringId: '00000000-0000-0000-0000-000000000000', expiresAt: '2020-01-01T00:00:00Z' },
       lastActivityAt: new Date().toISOString(),
     });
     const expired = await sessions.findExpiredDeferrals();

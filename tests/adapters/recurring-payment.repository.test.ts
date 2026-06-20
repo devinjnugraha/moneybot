@@ -100,6 +100,14 @@ describe('NeonRecurringPaymentRepository', () => {
     expect(updated.amount).toBe(179_000);
     expect(updated.nextFireAt).toBe('2026-07-15');
   });
+
+  it('findById returns null for non-UUID recurringId instead of throwing', async () => {
+    const { user } = await seed();
+    const recurrings = new NeonRecurringPaymentRepository();
+    // 'rp-x' would cause Postgres error 22P02 — the adapter must guard before querying
+    const result = await recurrings.findById(user.userId, 'rp-x');
+    expect(result).toBeNull();
+  });
 });
 
 describe('findDueToday — day-of-month overflow', () => {
