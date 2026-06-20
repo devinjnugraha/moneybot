@@ -154,4 +154,5 @@ export interface Repos {
   sessions: ISessionRepository;
   budgets: IBudgetCodeRepository;
   recurrings: IRecurringPaymentRepository;
+  preferences: IUserPreferenceRepository;
 }

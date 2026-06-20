@@ -43,6 +43,11 @@ function mockRepos(due: RecurringPayment[] = []): Repos {
       findById: vi.fn(), findByName: vi.fn(), create: vi.fn(),
       update: vi.fn(), deactivate: vi.fn(),
     } as never,
+    preferences: {
+      findAllByUserId: vi.fn(async () => []),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+    } as never,
   };
 }
 

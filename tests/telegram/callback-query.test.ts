@@ -70,6 +70,11 @@ function mockRepos(overrides: {
       update: vi.fn(async () => ({ ...rp!, lastFiredAt: '2026-06-19' })),
       deactivate: vi.fn(),
     } as never,
+    preferences: {
+      findAllByUserId: vi.fn(async () => []),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+    } as never,
   };
 }
 

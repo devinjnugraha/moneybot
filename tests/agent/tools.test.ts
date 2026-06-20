@@ -40,6 +40,11 @@ function mockRepos(overrides: Partial<Repos> = {}): Repos {
       update: vi.fn(),
       deactivate: vi.fn(),
     } as never,
+    preferences: {
+      findAllByUserId: vi.fn(async () => []),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+    } as never,
     ...overrides,
   };
 }
