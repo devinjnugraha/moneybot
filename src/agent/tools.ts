@@ -218,6 +218,33 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     },
   });
 
+  tools.update_profile = tool({
+    description:
+      'Perbarui profil user (nama, bahasa, timezone). Paling tidak satu field harus diisi. ' +
+      'Panggil ini untuk menyimpan nama user saat onboarding.',
+    parameters: z.object({
+      name: z.string().optional(),
+      language: z.enum(['id', 'en']).optional(),
+      timezone: z.string().optional(),
+    }),
+    execute: async ({ name, language, timezone }) => {
+      if (!name && !language && !timezone) {
+        return { status: 'missing_fields', missing: ['name'] };
+      }
+      try {
+        const patch: Record<string, unknown> = {};
+        if (name !== undefined) patch.name = name;
+        if (language !== undefined) patch.language = language;
+        if (timezone !== undefined) patch.timezone = timezone;
+        const updated = await repos.users.update(userId, patch);
+        return { status: 'ok', data: updated };
+      } catch (e) {
+        logEvent('error', 'update_profile failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal memperbarui profil. Coba lagi.' };
+      }
+    },
+  });
+
   tools.remember_preference = tool({
     description:
       'Simpan preferensi user (akun favorit, tanggal gajian, kebiasaan kategorisasi, dll.). ' +

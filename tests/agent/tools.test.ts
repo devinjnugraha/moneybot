@@ -1126,6 +1126,67 @@ describe('buildTools — error messages are Bahasa Indonesia (NFR-09)', () => {
   });
 });
 
+describe('buildTools — update_profile', () => {
+  it('updates the user name and returns ok', async () => {
+    const repos = mockRepos({
+      users: {
+        create: vi.fn(),
+        update: vi.fn(async (_uid: string, patch: Record<string, unknown>) => ({
+          userId: 'u1', telegramChatId: '999', name: patch.name ?? '',
+          language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_profile } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(update_profile, { name: 'Devin' });
+    expect(res.status).toBe('ok');
+    expect(res.data).toMatchObject({ name: 'Devin' });
+    expect((repos.users.update as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('u1', { name: 'Devin' });
+  });
+
+  it('updates language and timezone', async () => {
+    const repos = mockRepos({
+      users: {
+        create: vi.fn(),
+        update: vi.fn(async () => ({
+          userId: 'u1', telegramChatId: '999', name: 'Devin',
+          language: 'en', timezone: 'Asia/Makassar', createdAt: '', updatedAt: '',
+        })),
+      } as never,
+    });
+    const { update_profile } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(update_profile, { language: 'en', timezone: 'Asia/Makassar' });
+    expect(res.status).toBe('ok');
+    expect((repos.users.update as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('u1', { language: 'en', timezone: 'Asia/Makassar' });
+  });
+
+  it('returns missing_fields when no fields are provided', async () => {
+    const repos = mockRepos();
+    const { update_profile } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(update_profile, {});
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('name');
+  });
+
+  it('returns Bahasa error when the repo throws (NFR-09)', async () => {
+    const repos = mockRepos({
+      users: {
+        create: vi.fn(),
+        update: vi.fn(async () => { throw new Error('DB DOWN'); }),
+      } as never,
+    });
+    const { update_profile } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = await callExec(update_profile, { name: 'Devin' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal memperbarui profil. Coba lagi.' });
+    expect(logEvent).toHaveBeenCalledWith('error', expect.any(String), expect.objectContaining({ userId: 'u1' }));
+  });
+
+  it('is always available (not gated by hasAccount)', () => {
+    const tools = buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: false });
+    expect(tools.update_profile).toBeDefined();
+  });
+});
+
 describe('buildTools — remember_preference / forget_preference', () => {
   it('remember_preference upserts and returns ok', async () => {
     const repos = mockRepos();
