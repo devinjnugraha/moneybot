@@ -138,4 +138,44 @@ describe('handleMessage', () => {
     const saved = (repos.sessions.set as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { turns: CoreMessage[] };
     expect(saved.turns.some((m: CoreMessage) => (m as { content?: string }).content === 'old')).toBe(false);
   });
+
+  it('injects the PREFERENSI USER block into the system prompt when prefs exist', async () => {
+    const repos = mockRepos();
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+    });
+    (repos.preferences.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { userId: 'u1', key: 'default_account', value: 'BCA', updatedAt: '' },
+    ]);
+    const run = vi.fn(async () => ({
+      text: 'ok', responseMessages: [{ role: 'assistant' as const, content: 'ok' }], toolResults: [],
+    }));
+    await handleMessage({
+      text: 'halo', chatId: '1', repos, run, system: 'BASE',
+      contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30,
+    });
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({
+      system: expect.stringContaining('PREFERENSI USER'),
+    }));
+    const call = (run as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
+    expect(call.system).toContain('BASE');
+    expect(call.system).toContain('- default_account: BCA');
+  });
+
+  it('leaves the system prompt unchanged when the user has no preferences', async () => {
+    const repos = mockRepos();
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+    });
+    (repos.preferences.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const run = vi.fn(async () => ({
+      text: 'ok', responseMessages: [{ role: 'assistant' as const, content: 'ok' }], toolResults: [],
+    }));
+    await handleMessage({
+      text: 'halo', chatId: '1', repos, run, system: 'BASE',
+      contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30,
+    });
+    const call = (run as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
+    expect(call.system).toBe('BASE');
+  });
 });

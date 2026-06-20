@@ -41,6 +41,21 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
     userId: user.userId, chatId: args.chatId, onboarded, textLength: args.text.length,
   });
 
+  // Enrich the system prompt with the user's saved preferences (inject every
+  // turn). Preferences are optional enrichment — degrade gracefully if the
+  // read fails: log and proceed with the base prompt.
+  let system = args.system;
+  try {
+    const prefs = await args.repos.preferences.findAllByUserId(user.userId);
+    if (prefs.length) {
+      system = args.system +
+        '\n\nPREFERENSI USER (sudah diketahui — jangan tanya ulang):\n' +
+        prefs.map((p) => `- ${p.key}: ${p.value}`).join('\n');
+    }
+  } catch (e) {
+    logEvent('error', 'preferences load failed', { userId: user.userId, chatId: args.chatId, error: (e as Error).message });
+  }
+
   // 2. Load or reset session
   let session = await args.repos.sessions.get(args.chatId);
   if (!session || isExpired(session, args.sessionIdleTimeoutMinutes, nowIso)) {
@@ -64,7 +79,7 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
   let result;
   try {
     result = await args.run({
-      system: args.system,
+      system,
       messages,
       tools,
       maxSteps: 10,
