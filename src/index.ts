@@ -45,11 +45,29 @@ async function main() {
   startCronJobs(repos);
   registerCallbackHandler(repos);
 
+  // Graceful shutdown on SIGTERM (PaaS hosts: Render/Railway/Fly). grammY
+  // handles SIGINT automatically; SIGTERM would otherwise kill the process
+  // mid-poll without closing the DB pool. bot.stop() resolves bot.start(),
+  // which falls through to the pool.end() below.
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logEvent('info', 'shutting down', { signal });
+    void bot.stop();
+  };
+  process.on('SIGTERM', shutdown);
+
   logEvent('info', 'starting long-polling');
   await bot.start({
     allowed_updates: ['message', 'callback_query'], // callback_query used in Slice 4
     onStart: () => logEvent('info', 'polling'),
   });
+
+  // Polling stopped (SIGINT auto-stop or SIGTERM above) — close the pool cleanly.
+  await pool.end();
+  logEvent('info', 'stopped');
+  process.exit(0);
 }
 
 main().catch(async (err) => {
