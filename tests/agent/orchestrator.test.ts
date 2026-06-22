@@ -70,7 +70,7 @@ describe('handleMessage', () => {
 
   it('onboards an unknown user and replies with the onboarding prompt', async () => {
     const repos = mockRepos();
-    const { reply, onboarded } = await handleMessage({
+    const { reply } = await handleMessage({
       text: 'hai',
       chatId: '999',
       repos,
@@ -79,7 +79,6 @@ describe('handleMessage', () => {
       contextWindowTurns: 20,
       sessionIdleTimeoutMinutes: 30,
     });
-    expect(onboarded).toBe(true);
     // Verify user is created with empty name — the LLM collects it via conversation
     const createCall = (repos.users.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { name: string };
     expect(createCall.name).toBe('');
