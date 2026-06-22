@@ -14,6 +14,11 @@ export class NeonUserRepository implements IUserRepository {
     return rows[0] ? mapUser(rows[0] as Record<string, unknown>) : null;
   }
 
+  async findAll(): Promise<User[]> {
+    const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at');
+    return rows.map((r) => mapUser(r as Record<string, unknown>));
+  }
+
   async create(input: CreateUserInput): Promise<User> {
     const { rows } = await pool.query(
       `INSERT INTO users (telegram_chat_id, name, language, timezone)

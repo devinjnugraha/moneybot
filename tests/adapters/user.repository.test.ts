@@ -30,3 +30,15 @@ describe('NeonUserRepository', () => {
     expect(found?.name).toBe('New');
   });
 });
+
+describe('NeonUserRepository.findAll', () => {
+  it('includes created users', async () => {
+    const repo = new NeonUserRepository();
+    const u1 = await repo.create({ telegramChatId: uniqueChatId(), name: 'A' });
+    const u2 = await repo.create({ telegramChatId: uniqueChatId(), name: 'B' });
+    const all = await repo.findAll();
+    const ids = all.map((u) => u.userId);
+    expect(ids).toContain(u1.userId);
+    expect(ids).toContain(u2.userId);
+  });
+});

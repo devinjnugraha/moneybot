@@ -76,6 +76,7 @@ export interface CreateTransferInput {
 export interface IUserRepository {
   findByTelegramChatId(chatId: string): Promise<User | null>;
   findById(userId: string): Promise<User | null>;
+  findAll(): Promise<User[]>;
   create(input: CreateUserInput): Promise<User>;
   update(userId: string, patch: Partial<User>): Promise<User>;
 }
