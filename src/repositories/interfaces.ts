@@ -6,6 +6,8 @@ import type {
   RecurringPayment,
   SessionContext,
   UserPreference,
+  ProactiveTriggerType,
+  ProactiveSettings,
   AccountType,
   TransactionType,
 } from '../domain/entities.js';
@@ -76,6 +78,7 @@ export interface CreateTransferInput {
 export interface IUserRepository {
   findByTelegramChatId(chatId: string): Promise<User | null>;
   findById(userId: string): Promise<User | null>;
+  findAll(): Promise<User[]>;
   create(input: CreateUserInput): Promise<User>;
   update(userId: string, patch: Partial<User>): Promise<User>;
 }
@@ -139,6 +142,23 @@ export interface IUserPreferenceRepository {
   delete(userId: string, key: string): Promise<void>;
 }
 
+export interface IOutreachLogRepository {
+  record(i: {
+    userId: string;
+    triggerType: ProactiveTriggerType;
+    dedupKey: string;
+    payload: unknown;
+    sentAt: Date;
+  }): Promise<{ inserted: boolean }>; // false => dedup key already existed
+  existsKey(userId: string, dedupKey: string): Promise<boolean>;
+  countSince(userId: string, since: Date): Promise<number>;
+}
+
+export interface IProactiveSettingsRepository {
+  get(userId: string): Promise<ProactiveSettings>; // defaults if no row
+  setMuted(userId: string, muted: boolean, resumeAt?: Date): Promise<void>;
+}
+
 export interface Repos {
   users: IUserRepository;
   accounts: IAccountRepository;
@@ -147,4 +167,6 @@ export interface Repos {
   budgets: IBudgetCodeRepository;
   recurrings: IRecurringPaymentRepository;
   preferences: IUserPreferenceRepository;
+  outreach: IOutreachLogRepository;
+  proactiveSettings: IProactiveSettingsRepository;
 }

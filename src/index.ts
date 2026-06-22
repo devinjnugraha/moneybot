@@ -15,6 +15,7 @@ import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
 import { startCronJobs } from './scheduler/cron.js';
 import { registerCallbackHandler } from './telegram/callback-query.js';
+import { registerNudgesCommand } from './telegram/nudges-command.js';
 import { logEvent } from './utils/logger.js';
 
 async function main() {
@@ -29,6 +30,7 @@ async function main() {
   const run = createRunner(model);
   const repos = createRepos();
 
+  registerNudgesCommand(repos);
   registerMessageHandler(async (text, chatId) => {
     const { reply } = await handleMessage({
       text,
@@ -42,7 +44,7 @@ async function main() {
     return reply;
   });
 
-  startCronJobs(repos);
+  startCronJobs(repos, model);
   registerCallbackHandler(repos);
 
   // Graceful shutdown on SIGTERM (PaaS hosts: Render/Railway/Fly). grammY

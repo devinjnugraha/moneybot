@@ -115,3 +115,26 @@ export type TransactionResult = WriteResult<{
   transaction: Transaction;
   budget?: { spent: number; limit: number; exceeded: boolean };
 }>;
+
+// ---- Proactive outreach ----
+
+export type ProactiveTriggerType =
+  | 'scheduled_summary'
+  | 'budget_threshold'
+  | 'logging_gap'
+  | 'anomaly';
+
+export interface OutreachLogEntry {
+  outreachId: string;
+  userId: string;
+  triggerType: ProactiveTriggerType;
+  dedupKey: string;
+  payload: unknown;
+  sentAt: string; // ISO 8601
+}
+
+export interface ProactiveSettings {
+  userId: string;
+  muted: boolean;
+  resumeAt?: string; // ISO 8601; undefined => mute until explicitly turned back on
+}
