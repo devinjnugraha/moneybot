@@ -9,6 +9,10 @@ const schema = z.object({
   CONTEXT_WINDOW_TURNS: z.coerce.number().int().positive().default(20),
   SESSION_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(30),
   CRON_SCHEDULE: z.string().default('0 8 * * *'),
+  PROACTIVE_ENABLED: z.string().default('true').transform((v) => v === 'true'),
+  PROACTIVE_SUMMARY_CRON: z.string().default('0 21 * * *'),
+  PROACTIVE_MAX_PER_DAY: z.coerce.number().int().positive().default(5),
+  PROACTIVE_QUIET_HOURS: z.string().default('22:00-07:00'),
 });
 
 export type AppConfig = z.infer<typeof schema>;
