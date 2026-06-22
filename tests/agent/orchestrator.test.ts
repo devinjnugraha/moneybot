@@ -60,6 +60,15 @@ function mockRepos(): Repos {
       upsert: vi.fn(),
       delete: vi.fn(),
     } as never,
+    outreach: {
+      record: vi.fn(async () => ({ inserted: true })),
+      existsKey: vi.fn(async () => false),
+      countSince: vi.fn(async () => 0),
+    } as never,
+    proactiveSettings: {
+      get: vi.fn(async () => ({ userId: 'u1', muted: false })),
+      setMuted: vi.fn(async () => undefined),
+    } as never,
   };
 }
 
