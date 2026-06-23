@@ -1,10 +1,10 @@
 import type { RecurringPayment } from '../domain/entities.js';
 import type { InlineKeyboardMarkup } from '@grammyjs/types';
+import { formatIDR } from '../utils/format.js';
 
-/** Format a number as IDR locale: dot as thousands separator, no currency symbol. */
-export function formatIDR(n: number): string {
-  return n.toLocaleString('id-ID');
-}
+// Re-exported to preserve this module's public API after formatIDR moved to
+// src/utils/format.ts (so the agent layer can use it without a transport import).
+export { formatIDR };
 
 /**
  * Convert LLM-generated Markdown formatting to Telegram HTML parse-mode tags.
