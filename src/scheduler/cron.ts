@@ -7,6 +7,7 @@ import { createComposer } from '../proactive/composers/resolve.js';
 import { detectScheduledSummary } from '../proactive/triggers/scheduled-summary.js';
 import { createBudgetThresholdDetector } from '../proactive/triggers/budget-threshold.js';
 import { createLoggingGapDetector } from '../proactive/triggers/logging-gap.js';
+import { createAnomalyDetector } from '../proactive/triggers/anomaly.js';
 import { markdownToTelegramHTML } from '../telegram/formatter.js';
 import { bot } from '../telegram/bot.js';
 import { config } from '../config/index.js';
@@ -61,7 +62,15 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
     ]).catch((err) => logEvent('error', 'proactive sweep error', { error: (err as Error).message }));
   }, { timezone: 'Asia/Jakarta' });
 
+  // Proactive outreach — weekly anomaly insight (LLM-composed), Monday 09:00 WIB.
+  cron.schedule(config.PROACTIVE_ANOMALY_CRON, () => {
+    runProactivePass({
+      detector: createAnomalyDetector(config.PROACTIVE_ANOMALY_MULTIPLIER),
+      composer, repos, policy, now: new Date(), send,
+    }).catch((err) => logEvent('error', 'proactive anomaly error', { error: (err as Error).message }));
+  }, { timezone: 'Asia/Jakarta' });
+
   logEvent('info', 'cron jobs registered', {
-    schedules: [config.CRON_SCHEDULE, '*/5 * * * *', config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON],
+    schedules: [config.CRON_SCHEDULE, '*/5 * * * *', config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
   });
 }

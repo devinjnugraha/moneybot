@@ -55,6 +55,42 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 }
 
+/** Add (possibly negative) days to a 'YYYY-MM-DD' date, returning 'YYYY-MM-DD'. */
+export function addDays(s: string, days: number): string {
+  return new Date(Date.parse(s) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * ISO-8601 week-of-year and ISO week-numbering year for `now` (WIB). The ISO
+ * year can differ from the calendar year near Jan 1 / Dec 31: the week's
+ * Thursday owns the year (so 2025-12-31 is ISO 2026-W01).
+ */
+export function wibISOWeek(now: Date = new Date()): { year: number; week: number } {
+  const { year: y, month: m, day: d } = wibDateParts(now);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = date.getUTCDay() || 7; // Mon=1 .. Sun=7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum); // Thursday of this ISO week
+  const isoYear = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return { year: isoYear, week };
+}
+
+/** ISO week label 'YYYY-Www' (e.g. '2026-W26') for `now` (WIB). */
+export function wibISOWeekLabel(now: Date = new Date()): string {
+  const { year, week } = wibISOWeek(now);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/** Monday of `now`'s ISO week as a 'YYYY-MM-DD' WIB calendar date. */
+export function wibISOWeekMonday(now: Date = new Date()): string {
+  const { year: y, month: m, day: d } = wibDateParts(now);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = date.getUTCDay() || 7; // Mon=1 .. Sun=7
+  date.setUTCDate(date.getUTCDate() - (dayNum - 1)); // back to Monday
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Next occurrence of `dayOfMonth` on or after today (WIB).
  * A day-31 subscription in February fires on Feb 28 (last-day rule).

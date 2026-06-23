@@ -38,6 +38,18 @@ interface LoggingGapData {
   lastDate: string; // 'YYYY-MM-DD'
 }
 
+interface AnomalyCategory {
+  category: string;
+  name: string;
+  icon: string;
+  thisWeek: number;
+  avg: number;
+}
+interface AnomalyData {
+  week: string;
+  flagged: AnomalyCategory[];
+}
+
 /** Deterministic LLM-fallback for the daily summary. */
 export function scheduledSummaryTemplate(payload: ProactivePayload): string {
   const d = payload.data as unknown as SummaryData;
@@ -73,6 +85,16 @@ export function loggingGapTemplate(payload: ProactivePayload): string {
   return `Halo, ${d.gapDays} hari ga ada catatan pengeluaran. Mau aku bantu catat sesuatu?`;
 }
 
+/** Deterministic LLM-fallback for the weekly anomaly insight (design §9.4). */
+export function anomalyTemplate(payload: ProactivePayload): string {
+  const d = payload.data as unknown as AnomalyData;
+  const lines = ['🚨 Pengeluaran minggu ini lebih tinggi dari biasanya:'];
+  for (const c of d.flagged) {
+    lines.push(`${c.icon} ${c.name}: ${idr(c.thisWeek)} (rata-rata ${idr(c.avg)})`);
+  }
+  return lines.join('\n');
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose(payload: ProactivePayload): string {
   switch (payload.triggerType) {
@@ -82,6 +104,8 @@ export function templateCompose(payload: ProactivePayload): string {
       return budgetThresholdTemplate(payload);
     case 'logging_gap':
       return loggingGapTemplate(payload);
+    case 'anomaly':
+      return anomalyTemplate(payload);
     default:
       return '(tidak ada pesan)';
   }
