@@ -1,4 +1,6 @@
 import { CATEGORIES } from '../domain/categories.js';
+import { formatIDR } from '../utils/format.js';
+import type { Account, AccountType, BudgetCode, UserPreference } from '../domain/entities.js';
 
 function formatCategories(): string {
   return CATEGORIES.map((c) => `- ${c.icon} ${c.categoryId} — ${c.name} (${c.nameEn})`).join('\n');
@@ -99,6 +101,52 @@ Pengeluaran biasanya: <deskripsi> <jumlah> <akun>. Contoh: "bakso 20000 bca" →
 
 TAKSONOMI KATEGORI (categoryId — Indonesia (English)):
 ${formatCategories()}`;
+}
+
+const ACCOUNT_TYPE_ICON: Record<AccountType, string> = {
+  cash: '💵',
+  bank: '🏦',
+  card: '💳',
+};
+
+export interface EnrichmentData {
+  preferences?: UserPreference[];
+  accounts?: Account[];
+  budgets?: BudgetCode[];
+}
+
+/**
+ * Append the user's stable reference data to the base system prompt:
+ * preferences, account list (id/name/type — NOT balance), and current-month
+ * budget codes (id/name/limit — NOT spent). Volatile values are deliberately
+ * omitted so the model reads live balances/spent via tools (staleness guard).
+ * Each section is omitted when its array is empty/undefined.
+ */
+export function enrichSystemPrompt(base: string, data: EnrichmentData): string {
+  const sections: string[] = [base];
+
+  if (data.preferences?.length) {
+    sections.push(
+      'PREFERENSI USER (sudah diketahui — jangan tanya ulang):\n' +
+        data.preferences.map((p) => `- ${p.key}: ${p.value}`).join('\n'),
+    );
+  }
+
+  if (data.accounts?.length) {
+    sections.push(
+      'AKUN USER (pakai langsung untuk tool tulis; pilih accountId dari sini. JANGAN baca saldo dari sini — selalu panggil get_account_balance untuk saldo):\n' +
+        data.accounts.map((a) => `- ${a.accountId} ${a.name} ${ACCOUNT_TYPE_ICON[a.type]}`).join('\n'),
+    );
+  }
+
+  if (data.budgets?.length) {
+    sections.push(
+      'BUDGET CODE BULAN INI (id, nama, batas — untuk resolve nama→id; spent TIDAK ada di sini, pakai get_budget_codes untuk spent):\n' +
+        data.budgets.map((b) => `- ${b.budgetCodeId} ${b.name} — batas ${formatIDR(b.monthlyBudget)}`).join('\n'),
+    );
+  }
+
+  return sections.join('\n\n');
 }
 
 /** Static fallback for contexts that don't have a WIB date (legacy). */
