@@ -1,9 +1,11 @@
 import type { CoreMessage } from 'ai';
 import type { Repos } from '../repositories/interfaces.js';
 import type { AgentRunner } from './run-agent.js';
+import type { Account } from '../domain/entities.js';
 import { buildTools } from './tools.js';
+import { enrichSystemPrompt } from './system-prompt.js';
 import { isExpired, freshSession, trimTurns, extractLastTransactionId } from './orchestrator-helpers.js';
-import { nowWIB } from '../domain/time.js';
+import { nowWIB, wibYear, wibMonth } from '../domain/time.js';
 import { logEvent } from '../utils/logger.js';
 
 export interface HandleMessageArgs {
@@ -43,20 +45,28 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
 		textLength: args.text.length,
 	});
 
-	// Enrich the system prompt with the user's saved preferences (inject every
-	// turn). Preferences are optional enrichment — degrade gracefully if the
-	// read fails: log and proceed with the base prompt.
+	// Enrich the system prompt with the user's stable reference data (inject
+	// every turn): preferences, account list (id/name/type), and current-month
+	// budget codes (id/name/limit). Volatile values (balance, spent) are
+	// deliberately NOT injected — the model reads them via tools. The accounts
+	// list is fetched once here and reused for the onboarding gate below.
+	//
+	// All three reads share one try/catch: on any failure we fall back to the
+	// base prompt and an empty account list (hasAccount=false → onboarding-only
+	// tools this turn), so a transient read error never crashes the request and
+	// never lets a write tool fire against an unknown account set.
 	let system = args.system;
+	let accounts: Account[] = [];
 	try {
-		const prefs = await args.repos.preferences.findAllByUserId(user.userId);
-		if (prefs.length) {
-			system =
-				args.system +
-				'\n\nPREFERENSI USER (sudah diketahui — jangan tanya ulang):\n' +
-				prefs.map((p) => `- ${p.key}: ${p.value}`).join('\n');
-		}
+		const [fetchedAccounts, prefs, budgets] = await Promise.all([
+			args.repos.accounts.findAllByUserId(user.userId),
+			args.repos.preferences.findAllByUserId(user.userId),
+			args.repos.budgets.findByUserAndMonth(user.userId, wibYear(), wibMonth()),
+		]);
+		accounts = fetchedAccounts;
+		system = enrichSystemPrompt(args.system, { preferences: prefs, accounts, budgets });
 	} catch (e) {
-		logEvent('error', 'preferences load failed', {
+		logEvent('error', 'prompt enrichment failed', {
 			userId: user.userId,
 			chatId: args.chatId,
 			error: (e as Error).message,
@@ -72,8 +82,8 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
 	// 3. Append the user turn
 	const messages: CoreMessage[] = [...session.turns, { role: 'user', content: args.text }];
 
-	// 4. Build tools (gated by onboarding state)
-	const accounts = await args.repos.accounts.findAllByUserId(user.userId);
+	// 4. Build tools (gated by onboarding state). `accounts` was fetched during
+	//    enrichment above and reused here (single fetch, no double-read).
 	const hasAccount = accounts.length > 0;
 	const tools = buildTools({
 		userId: user.userId,

@@ -173,20 +173,58 @@ describe('handleMessage', () => {
     expect(call.system).toContain('- default_account: BCA');
   });
 
-  it('leaves the system prompt unchanged when the user has no preferences', async () => {
+  it('injects AKUN USER + BUDGET CODE blocks into the system prompt when the user has accounts/budgets', async () => {
     const repos = mockRepos();
     (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
       userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
     });
-    (repos.preferences.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (repos.accounts.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { accountId: 'acct-1', userId: 'u1', name: 'BCA', type: 'bank', balance: 5550000, isActive: true, createdAt: '', updatedAt: '' },
+    ]);
+    (repos.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { budgetCodeId: 'bc-1', userId: 'u1', name: 'Raissa', monthlyBudget: 800000, month: 6, year: 2026, spent: 777000, createdAt: '', updatedAt: '' },
+    ]);
     const run = vi.fn(async () => ({
       text: 'ok', responseMessages: [{ role: 'assistant' as const, content: 'ok' }], toolResults: [],
     }));
-    await handleMessage({
-      text: 'halo', chatId: '1', repos, run, system: 'BASE',
-      contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30,
+    await handleMessage({ text: 'halo', chatId: '1', repos, run, system: 'BASE', contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30 });
+    const call = (run as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
+    expect(call.system).toContain('AKUN USER');
+    expect(call.system).toContain('acct-1');
+    expect(call.system).toContain('BUDGET CODE BULAN INI');
+    expect(call.system).toContain('batas 800.000');
+    // Staleness invariant: balance and spent must NOT leak into the prompt.
+    expect(call.system).not.toContain('5550000');
+    expect(call.system).not.toContain('777000');
+  });
+
+  it('leaves the system prompt unchanged when the user has no preferences, accounts, or budgets', async () => {
+    const repos = mockRepos();
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
     });
+    // mockRepos defaults: preferences [], accounts [], budgets []
+    const run = vi.fn(async () => ({
+      text: 'ok', responseMessages: [{ role: 'assistant' as const, content: 'ok' }], toolResults: [],
+    }));
+    await handleMessage({ text: 'halo', chatId: '1', repos, run, system: 'BASE', contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30 });
     const call = (run as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
     expect(call.system).toBe('BASE');
+    expect(call.system).not.toContain('AKUN USER');
+  });
+
+  it('falls back to the base prompt when the accounts read throws', async () => {
+    const repos = mockRepos();
+    (repos.users.findByTelegramChatId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      userId: 'u1', telegramChatId: '1', name: 'Devin', language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '',
+    });
+    (repos.accounts.findAllByUserId as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'));
+    const run = vi.fn(async () => ({
+      text: 'ok', responseMessages: [{ role: 'assistant' as const, content: 'ok' }], toolResults: [],
+    }));
+    await handleMessage({ text: 'halo', chatId: '1', repos, run, system: 'BASE', contextWindowTurns: 20, sessionIdleTimeoutMinutes: 30 });
+    const call = (run as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
+    expect(call.system).toBe('BASE');
+    expect(logEvent).toHaveBeenCalledWith('error', 'prompt enrichment failed', expect.objectContaining({ userId: 'u1' }));
   });
 });
