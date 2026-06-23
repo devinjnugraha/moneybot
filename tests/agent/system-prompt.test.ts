@@ -88,3 +88,16 @@ describe('enrichSystemPrompt', () => {
     expect(out).toContain('BUDGET CODE BULAN INI');
   });
 });
+
+describe('buildSystemPrompt — account-block rules', () => {
+  const prompt = buildSystemPrompt('2026-06-22');
+
+  it('rule 1 points the model at the AKUN USER block and mandates get_account_balance for balances', () => {
+    expect(prompt).toContain('AKUN USER');
+    expect(prompt).toContain('get_account_balance');
+  });
+
+  it('rule 11 onboards when the AKUN USER block is absent or empty', () => {
+    expect(prompt).toMatch(/blok AKUN USER (tidak ada|kosong)/);
+  });
+});
