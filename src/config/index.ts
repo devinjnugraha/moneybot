@@ -13,6 +13,18 @@ const schema = z.object({
   PROACTIVE_SUMMARY_CRON: z.string().default('0 21 * * *'),
   PROACTIVE_MAX_PER_DAY: z.coerce.number().int().positive().default(5),
   PROACTIVE_QUIET_HOURS: z.string().default('22:00-07:00'),
+  PROACTIVE_SWEEP_CRON: z.string().default('*/30 * * * *'),
+  PROACTIVE_GAP_DAYS: z.coerce.number().int().positive().default(2),
+  PROACTIVE_ANOMALY_CRON: z.string().default('0 9 * * 1'),
+  PROACTIVE_ANOMALY_MULTIPLIER: z.coerce.number().positive().default(3),
+  // "80,100" -> [80,100] (deduped, validated 1-100, ascending).
+  PROACTIVE_BUDGET_THRESHOLDS: z.string()
+    .default('80,100')
+    .transform((v) =>
+      Array.from(new Set(v.split(',').map((s) => Number(s.trim()))))
+        .filter((n) => Number.isFinite(n) && n > 0 && n <= 100)
+        .sort((a, b) => a - b),
+    ),
 });
 
 export type AppConfig = z.infer<typeof schema>;
