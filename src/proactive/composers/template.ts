@@ -24,6 +24,15 @@ interface SummaryData {
   budgets: SummaryBudget[];
 }
 
+interface BudgetThresholdData {
+  codeId: string;
+  name: string;
+  spent: number;
+  alloc: number;
+  pct: number; // actual fraction (e.g. 0.82)
+  level: number; // threshold level crossed (e.g. 80 or 100)
+}
+
 /** Deterministic LLM-fallback for the daily summary. */
 export function scheduledSummaryTemplate(payload: ProactivePayload): string {
   const d = payload.data as unknown as SummaryData;
@@ -43,11 +52,23 @@ export function scheduledSummaryTemplate(payload: ProactivePayload): string {
   return lines.join('\n');
 }
 
+/** Deterministic budget-crossed nudge (design §9.2). Escalates at level 100. */
+export function budgetThresholdTemplate(payload: ProactivePayload): string {
+  const d = payload.data as unknown as BudgetThresholdData;
+  const pct = Math.round(d.pct * 100);
+  const over = d.level >= 100;
+  const icon = over ? '🚨' : '⚠️';
+  const tail = over ? ' — over budget!' : '';
+  return `${icon} Budget '${d.name}' udah ${pct}% (${idr(d.spent)} / ${idr(d.alloc)})${tail}`;
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose(payload: ProactivePayload): string {
   switch (payload.triggerType) {
     case 'scheduled_summary':
       return scheduledSummaryTemplate(payload);
+    case 'budget_threshold':
+      return budgetThresholdTemplate(payload);
     default:
       return '(tidak ada pesan)';
   }

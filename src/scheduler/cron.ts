@@ -5,6 +5,7 @@ import { sweepDeferredPayments } from './defer-sweep.js';
 import { runProactivePass } from '../proactive/dispatcher.js';
 import { createComposer } from '../proactive/composers/resolve.js';
 import { detectScheduledSummary } from '../proactive/triggers/scheduled-summary.js';
+import { createBudgetThresholdDetector } from '../proactive/triggers/budget-threshold.js';
 import { markdownToTelegramHTML } from '../telegram/formatter.js';
 import { bot } from '../telegram/bot.js';
 import { config } from '../config/index.js';
@@ -44,7 +45,18 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
       .catch((err) => logEvent('error', 'proactive summary error', { error: (err as Error).message }));
   }, { timezone: 'Asia/Jakarta' });
 
+  // Proactive outreach — event-driven sweep (design §14). Budget thresholds now;
+  // logging_gap joins this sweep in slice 3.
+  cron.schedule(config.PROACTIVE_SWEEP_CRON, () => {
+    Promise.all([
+      runProactivePass({
+        detector: createBudgetThresholdDetector(config.PROACTIVE_BUDGET_THRESHOLDS),
+        composer, repos, policy, now: new Date(), send,
+      }),
+    ]).catch((err) => logEvent('error', 'proactive sweep error', { error: (err as Error).message }));
+  }, { timezone: 'Asia/Jakarta' });
+
   logEvent('info', 'cron jobs registered', {
-    schedules: [config.CRON_SCHEDULE, '*/5 * * * *', config.PROACTIVE_SUMMARY_CRON],
+    schedules: [config.CRON_SCHEDULE, '*/5 * * * *', config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON],
   });
 }
