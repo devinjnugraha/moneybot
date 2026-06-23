@@ -48,6 +48,14 @@ export function wibDay(now: Date = new Date()): number {
 }
 
 /**
+ * Integer day difference (b - a) for two 'YYYY-MM-DD' calendar dates. Both are
+ * treated as abstract WIB calendar dates (UTC midnight), so the diff is exact.
+ */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+}
+
+/**
  * Next occurrence of `dayOfMonth` on or after today (WIB).
  * A day-31 subscription in February fires on Feb 28 (last-day rule).
  */

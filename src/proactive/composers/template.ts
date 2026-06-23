@@ -33,6 +33,11 @@ interface BudgetThresholdData {
   level: number; // threshold level crossed (e.g. 80 or 100)
 }
 
+interface LoggingGapData {
+  gapDays: number;
+  lastDate: string; // 'YYYY-MM-DD'
+}
+
 /** Deterministic LLM-fallback for the daily summary. */
 export function scheduledSummaryTemplate(payload: ProactivePayload): string {
   const d = payload.data as unknown as SummaryData;
@@ -62,6 +67,12 @@ export function budgetThresholdTemplate(payload: ProactivePayload): string {
   return `${icon} Budget '${d.name}' udah ${pct}% (${idr(d.spent)} / ${idr(d.alloc)})${tail}`;
 }
 
+/** Deterministic logging-gap nudge (design §9.3). */
+export function loggingGapTemplate(payload: ProactivePayload): string {
+  const d = payload.data as unknown as LoggingGapData;
+  return `Halo, ${d.gapDays} hari ga ada catatan pengeluaran. Mau aku bantu catat sesuatu?`;
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose(payload: ProactivePayload): string {
   switch (payload.triggerType) {
@@ -69,6 +80,8 @@ export function templateCompose(payload: ProactivePayload): string {
       return scheduledSummaryTemplate(payload);
     case 'budget_threshold':
       return budgetThresholdTemplate(payload);
+    case 'logging_gap':
+      return loggingGapTemplate(payload);
     default:
       return '(tidak ada pesan)';
   }

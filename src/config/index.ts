@@ -14,6 +14,7 @@ const schema = z.object({
   PROACTIVE_MAX_PER_DAY: z.coerce.number().int().positive().default(5),
   PROACTIVE_QUIET_HOURS: z.string().default('22:00-07:00'),
   PROACTIVE_SWEEP_CRON: z.string().default('*/30 * * * *'),
+  PROACTIVE_GAP_DAYS: z.coerce.number().int().positive().default(2),
   // "80,100" -> [80,100] (deduped, validated 1-100, ascending).
   PROACTIVE_BUDGET_THRESHOLDS: z.string()
     .default('80,100')
