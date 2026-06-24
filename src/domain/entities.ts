@@ -122,7 +122,8 @@ export type ProactiveTriggerType =
   | 'scheduled_summary'
   | 'budget_threshold'
   | 'logging_gap'
-  | 'anomaly';
+  | 'anomaly'
+  | 'morning_glance';
 
 export interface OutreachLogEntry {
   outreachId: string;
