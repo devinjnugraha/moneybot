@@ -101,3 +101,16 @@ describe('buildSystemPrompt — account-block rules', () => {
     expect(prompt).toMatch(/blok AKUN USER (tidak ada|kosong)/);
   });
 });
+
+describe('buildSystemPrompt — post-write insight (rule 4)', () => {
+  const prompt = buildSystemPrompt('2026-06-22');
+
+  it('mentions insightContext and the optional one-line insight palette', () => {
+    expect(prompt).toContain('insightContext');
+    expect(prompt).toMatch(/INSIGHT PASCA-TULIS/);
+  });
+
+  it('keeps budget-status mandatory when a transaction is budgeted', () => {
+    expect(prompt).toMatch(/budget/);
+  });
+});
