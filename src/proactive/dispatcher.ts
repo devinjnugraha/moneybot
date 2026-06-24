@@ -1,4 +1,5 @@
 import type { CoreMessage } from 'ai';
+import type { InlineKeyboardMarkup } from '@grammyjs/types';
 import type { Repos } from '../repositories/interfaces.js';
 import type { Detector, Composer, ProactivePolicy } from './types.js';
 import { freshSession, trimTurns } from '../agent/orchestrator-helpers.js';
@@ -11,7 +12,7 @@ export interface RunProactivePassOptions {
   repos: Repos;
   policy: ProactivePolicy;
   now: Date;
-  send: (chatId: string, text: string) => Promise<void>;
+  send: (chatId: string, text: string, replyMarkup?: InlineKeyboardMarkup) => Promise<void>;
 }
 
 /** Append the composed message as an assistant turn so the user can reply & drill in. */
@@ -53,8 +54,10 @@ export async function runProactivePass(o: RunProactivePassOptions): Promise<void
         const sentToday = await o.repos.outreach.countSince(user.userId, startOfTodayWIB(o.now));
         if (sentToday >= o.policy.maxPerDay) continue;
 
-        const text = await o.composer(payload, { now: o.now });
-        await o.send(user.telegramChatId, text);
+        const out = await o.composer(payload, { now: o.now });
+        const { text, replyMarkup } =
+          typeof out === 'string' ? { text: out } : out;
+        await o.send(user.telegramChatId, text, replyMarkup);
 
         // Atomic dedup backstop for any race between existsKey and record.
         await o.repos.outreach.record({

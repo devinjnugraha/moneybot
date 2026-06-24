@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import type { LanguageModel } from 'ai';
+import type { InlineKeyboardMarkup } from '@grammyjs/types';
 import { fireRecurringPayments } from './recurring-fire.js';
 import { sweepDeferredPayments } from './defer-sweep.js';
 import { runProactivePass } from '../proactive/dispatcher.js';
@@ -38,8 +39,15 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
     quietHours: config.PROACTIVE_QUIET_HOURS,
     contextWindowTurns: config.CONTEXT_WINDOW_TURNS,
   };
-  const send = async (chatId: string, text: string): Promise<void> => {
-    await bot.api.sendMessage(chatId, markdownToTelegramHTML(text), { parse_mode: 'HTML' });
+  const send = async (
+    chatId: string,
+    text: string,
+    replyMarkup?: InlineKeyboardMarkup,
+  ): Promise<void> => {
+    await bot.api.sendMessage(chatId, markdownToTelegramHTML(text), {
+      parse_mode: 'HTML',
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
   };
 
   cron.schedule(config.PROACTIVE_SUMMARY_CRON, () => {
