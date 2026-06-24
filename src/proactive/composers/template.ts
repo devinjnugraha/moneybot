@@ -95,6 +95,39 @@ export function anomalyTemplate(payload: ProactivePayload): string {
   return lines.join('\n');
 }
 
+interface MorningGlanceBalance { name: string; type: string; balance: number }
+interface MorningGlanceUpcoming { name: string; amount: number; account: string; dueDate: string }
+interface MorningGlanceDue { name: string; amount: number; account: string }
+interface MorningGlanceData {
+  balances: MorningGlanceBalance[];
+  upcoming: MorningGlanceUpcoming[];
+  yesterday: { count: number; totalSpend: number } | null;
+  todayDueBills: MorningGlanceDue[];
+}
+
+/** Deterministic LLM-fallback for the morning glance. */
+export function morningGlanceTemplate(payload: ProactivePayload): string {
+  const d = payload.data as unknown as MorningGlanceData;
+  const lines: string[] = ['🌅 Pagi!'];
+  if (d.balances.length > 0) {
+    lines.push('Saldo: ' + d.balances.map((b) => `${b.name} ${idr(b.balance)}`).join(' · '));
+  }
+  if (d.upcoming.length > 0) {
+    lines.push('Tagihan minggu ini:');
+    for (const u of d.upcoming) lines.push(`• ${u.name} — ${idr(u.amount)} via ${u.account} (${u.dueDate})`);
+  }
+  if (d.todayDueBills.length > 0) {
+    lines.push('Jatuh tempo hari ini:');
+    for (const b of d.todayDueBills) lines.push(`• ${b.name} — ${idr(b.amount)} via ${b.account}`);
+  }
+  lines.push(
+    d.yesterday
+      ? `Kemarin: ${d.yesterday.count} catatan, total ${idr(d.yesterday.totalSpend)}.`
+      : 'Kemarin belum ada catatan — ada yang mau diinput?',
+  );
+  return lines.join('\n');
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose(payload: ProactivePayload): string {
   switch (payload.triggerType) {
@@ -106,6 +139,8 @@ export function templateCompose(payload: ProactivePayload): string {
       return loggingGapTemplate(payload);
     case 'anomaly':
       return anomalyTemplate(payload);
+    case 'morning_glance':
+      return morningGlanceTemplate(payload);
     default:
       return '(tidak ada pesan)';
   }
