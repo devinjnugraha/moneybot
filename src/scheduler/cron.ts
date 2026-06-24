@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import type { LanguageModel } from 'ai';
 import type { InlineKeyboardMarkup } from '@grammyjs/types';
-import { fireRecurringPayments } from './recurring-fire.js';
+import { detectMorningGlance } from '../proactive/triggers/morning-glance.js';
+import { createMorningGlanceComposer } from '../proactive/composers/morning-glance.js';
 import { sweepDeferredPayments } from './defer-sweep.js';
 import { runProactivePass } from '../proactive/dispatcher.js';
 import { createComposer } from '../proactive/composers/resolve.js';
@@ -17,11 +18,15 @@ import { logEvent } from '../utils/logger.js';
 
 /** Start all in-process cron jobs (timezone WIB per NFR-10). */
 export function startCronJobs(repos: Repos, model: LanguageModel): void {
-  // Daily 08:00 WIB — fire recurring payment prompts
-  cron.schedule(config.CRON_SCHEDULE, () => {
-    fireRecurringPayments(repos).catch((err) =>
-      logEvent('error', 'recurring-fire error', { error: (err as Error).message }),
-    );
+  // Daily ~08:00 WIB — merged morning glance (balances + week's bills + yesterday)
+  // and today's due-bill confirm buttons in one engine-routed message. Replaces
+  // the old standalone recurring-fire ping (design §5.4).
+  cron.schedule(config.PROACTIVE_MORNING_GLANCE_CRON, () => {
+    runProactivePass({
+      detector: detectMorningGlance,
+      composer: createMorningGlanceComposer(model),
+      repos, policy, now: new Date(), send,
+    }).catch((err) => logEvent('error', 'morning glance error', { error: (err as Error).message }));
   }, { timezone: 'Asia/Jakarta' });
 
   // Every 5 minutes — sweep deferred payments
@@ -79,6 +84,6 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
   }, { timezone: 'Asia/Jakarta' });
 
   logEvent('info', 'cron jobs registered', {
-    schedules: [config.CRON_SCHEDULE, '*/5 * * * *', config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
+    schedules: ['*/5 * * * *', config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
   });
 }
