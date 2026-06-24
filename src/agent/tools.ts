@@ -1,9 +1,10 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
-import type { AccountResult, TransactionResult, Transaction, User } from '../domain/entities.js';
+import type { AccountResult, TransactionResult, Transaction, User, InsightContext } from '../domain/entities.js';
 import { CATEGORIES } from '../domain/categories.js';
-import { todayWIB, wibMonth, wibYear, nextFireDate } from '../domain/time.js';
+import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday } from '../domain/time.js';
+import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
 
 export interface BuildToolsArgs {
@@ -57,10 +58,75 @@ export async function createExpenseCore(params: {
       }
     }
 
-    return { status: 'ok', data: { transaction, budget } };
+    const insightContext = await tryComputeInsightContext({
+      userId: params.userId, repos: params.repos, accountId: params.accountId,
+      categoryId: params.categoryId, now: new Date(), budget,
+    });
+
+    return { status: 'ok', data: { transaction, budget, insightContext } };
   } catch (e) {
     logEvent('error', 'createExpenseCore failed', { userId: params.userId, error: (e as Error).message });
     return { status: 'error', message: 'Gagal mencatat pengeluaran. Coba lagi.' } as TransactionResult;
+  }
+}
+
+/**
+ * Snapshot the user's situation right after a write so the reactive agent can
+ * append a one-line insight (design §6). today/week context only applies when a
+ * categoryId is present (expense/income); transfer omits it.
+ */
+export async function computeInsightContext(args: {
+  userId: string;
+  repos: Repos;
+  accountId: string;
+  categoryId?: string;
+  now: Date;
+  budget?: { spent: number; limit: number; exceeded: boolean };
+}): Promise<InsightContext> {
+  const today = todayWIB(args.now);
+  const acc = await args.repos.accounts.findById(args.userId, args.accountId);
+  const balanceAfter = acc?.balance ?? 0;
+
+  let todayCount = 0;
+  let todaySpend = 0;
+  let weekSpend = 0;
+  if (args.categoryId) {
+    const weekStart = wibISOWeekMonday(args.now);
+    const rows = await args.repos.transactions.findByDateRange(args.userId, weekStart, today);
+    const same = rows.filter((t) => t.type === 'expense' && t.categoryId === args.categoryId);
+    weekSpend = same.reduce((s, t) => s + t.amount, 0);
+    const todays = same.filter((t) => t.date === today);
+    todayCount = todays.length;
+    todaySpend = todays.reduce((s, t) => s + t.amount, 0);
+  }
+
+  const ctx: InsightContext = {
+    balanceAfter,
+    todayCountInCategory: todayCount,
+    todaySpendInCategory: todaySpend,
+    weekSpendInCategory: weekSpend,
+  };
+  if (args.budget && args.budget.limit > 0) {
+    ctx.budgetSpentPct = args.budget.spent / args.budget.limit;
+    ctx.budgetRemaining = args.budget.limit - args.budget.spent;
+  }
+  return ctx;
+}
+
+/** Best-effort enrichment: compute insightContext when enabled; never fail the write. */
+async function tryComputeInsightContext(args: {
+  userId: string;
+  repos: Repos;
+  accountId: string;
+  categoryId?: string;
+  now: Date;
+  budget?: { spent: number; limit: number; exceeded: boolean };
+}): Promise<InsightContext | undefined> {
+  if (!config.PROACTIVE_INSIGHT_ENABLED) return undefined;
+  try {
+    return await computeInsightContext(args);
+  } catch {
+    return undefined;
   }
 }
 
@@ -458,7 +524,10 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
 
         await repos.accounts.updateBalance(userId, account.accountId, amount);
 
-        const res: TransactionResult = { status: 'ok', data: { transaction } };
+        const insightContext = await tryComputeInsightContext({
+          userId, repos, accountId: account.accountId, categoryId, now: new Date(),
+        });
+        const res: TransactionResult = { status: 'ok', data: { transaction, insightContext } };
         return res;
       } catch (e) {
         logEvent('error', 'create_income failed', { userId, error: (e as Error).message });
@@ -517,7 +586,10 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
           notes,
         });
 
-        const res: TransactionResult = { status: 'ok', data: { transaction } };
+        const insightContext = await tryComputeInsightContext({
+          userId, repos, accountId: fromAccount.accountId, now: new Date(),
+        });
+        const res: TransactionResult = { status: 'ok', data: { transaction, insightContext } };
         return res;
       } catch (e) {
         logEvent('error', 'create_transfer failed', { userId, error: (e as Error).message });
@@ -585,7 +657,11 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         }
 
         const updated = await repos.transactions.update(userId, transactionId, patch as Partial<Transaction>);
-        const res: TransactionResult = { status: 'ok', data: { transaction: updated } };
+        const newCategoryId = a.categoryId ?? existing.categoryId;
+        const insightContext = await tryComputeInsightContext({
+          userId, repos, accountId: newAccountId, categoryId: newCategoryId, now: new Date(),
+        });
+        const res: TransactionResult = { status: 'ok', data: { transaction: updated, insightContext } };
         return res;
       } catch (e) {
         logEvent('error', 'update_transaction failed', { userId, error: (e as Error).message });

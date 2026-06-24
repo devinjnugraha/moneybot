@@ -114,7 +114,23 @@ export type AccountResult = WriteResult<Account>;
 export type TransactionResult = WriteResult<{
   transaction: Transaction;
   budget?: { spent: number; limit: number; exceeded: boolean };
+  insightContext?: InsightContext;
 }>;
+
+/**
+ * Post-write context snapshot returned on the `ok` variant of write tools so the
+ * reactive agent can append a one-line observational insight (design §6). Absent
+ * when PROACTIVE_INSIGHT_ENABLED=false, not applicable (e.g. transfer), or when
+ * the (best-effort) computation fails.
+ */
+export interface InsightContext {
+  balanceAfter: number;
+  todayCountInCategory: number;
+  todaySpendInCategory: number;
+  weekSpendInCategory: number;
+  budgetSpentPct?: number;
+  budgetRemaining?: number;
+}
 
 // ---- Proactive outreach ----
 
