@@ -52,3 +52,26 @@ export function recurringPrompt(
 
   return { text, keyboard };
 }
+
+/**
+ * Build an inline keyboard with one row per due bill (morning glance). Each row
+ * is [Catat][Tunda][Lewati] using the SAME rec:<id>:<action> format as
+ * recurringPrompt, so callback-query.ts handles taps unchanged. When more than
+ * one bill is due, each label is prefixed with the bill name to disambiguate.
+ * Returns undefined when there are no due bills (plain-text glance, no keyboard).
+ */
+export function dueBillsKeyboard(
+  bills: { recurringId: string; name: string }[],
+): InlineKeyboardMarkup | undefined {
+  if (bills.length === 0) return undefined;
+  const multi = bills.length > 1;
+  const rows = bills.map((b) => {
+    const lbl = (t: string) => (multi ? `${b.name} ${t}` : t);
+    return [
+      { text: lbl('✅ Catat'), callback_data: `rec:${b.recurringId}:confirm` },
+      { text: lbl('⏳ Tunda'), callback_data: `rec:${b.recurringId}:defer` },
+      { text: lbl('⏭️ Lewati'), callback_data: `rec:${b.recurringId}:skip` },
+    ];
+  });
+  return { inline_keyboard: rows };
+}

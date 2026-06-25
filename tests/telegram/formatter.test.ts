@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatIDR, recurringPrompt, markdownToTelegramHTML } from '../../src/telegram/formatter.js';
+import { formatIDR, recurringPrompt, markdownToTelegramHTML, dueBillsKeyboard } from '../../src/telegram/formatter.js';
 import type { RecurringPayment } from '../../src/domain/entities.js';
 import type { InlineKeyboardButton } from '@grammyjs/types';
 
@@ -106,5 +106,36 @@ describe('markdownToTelegramHTML', () => {
   it('handles ** spanning across words', () => {
     expect(markdownToTelegramHTML('**Catatan Pengeluaran**'))
       .toBe('<b>Catatan Pengeluaran</b>');
+  });
+});
+
+describe('dueBillsKeyboard', () => {
+  it('returns undefined when there are no due bills', () => {
+    expect(dueBillsKeyboard([])).toBeUndefined();
+  });
+
+  it('builds one row per bill with rec:<id>:<action> callbacks', () => {
+    const kb = dueBillsKeyboard([
+      { recurringId: 'r1', name: 'Spotify' },
+      { recurringId: 'r2', name: 'Netflix' },
+    ])!;
+    expect(kb.inline_keyboard).toHaveLength(2);
+    const row0 = kb.inline_keyboard[0]!.map((b) => (b as InlineKeyboardButton.CallbackButton).callback_data);
+    expect(row0).toEqual(['rec:r1:confirm', 'rec:r1:defer', 'rec:r1:skip']);
+    const row1 = kb.inline_keyboard[1]!.map((b) => (b as InlineKeyboardButton.CallbackButton).callback_data);
+    expect(row1).toEqual(['rec:r2:confirm', 'rec:r2:defer', 'rec:r2:skip']);
+  });
+
+  it('prefixes button labels with the bill name when more than one bill is due', () => {
+    const kb = dueBillsKeyboard([
+      { recurringId: 'r1', name: 'Spotify' },
+      { recurringId: 'r2', name: 'Netflix' },
+    ])!;
+    expect((kb.inline_keyboard[0]![0] as InlineKeyboardButton.CallbackButton).text).toContain('Spotify');
+  });
+
+  it('omits the name prefix when exactly one bill is due (matches recurringPrompt style)', () => {
+    const kb = dueBillsKeyboard([{ recurringId: 'r1', name: 'Spotify' }])!;
+    expect((kb.inline_keyboard[0]![0] as InlineKeyboardButton.CallbackButton).text).toBe('✅ Catat');
   });
 });

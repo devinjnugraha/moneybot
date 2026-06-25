@@ -1,4 +1,5 @@
 import type { LanguageModel } from 'ai';
+import type { InlineKeyboardMarkup } from '@grammyjs/types';
 import type { ProactiveTriggerType } from '../domain/entities.js';
 import type { Repos } from '../repositories/interfaces.js';
 
@@ -16,8 +17,20 @@ export interface ComposerCtx {
   now: Date;
 }
 
-/** Turns one payload into the user-facing Bahasa Indonesia message. */
-export type Composer = (payload: ProactivePayload, ctx: ComposerCtx) => Promise<string>;
+/** A composed message: text always; an optional inline keyboard (e.g. due-bill buttons). */
+export interface ComposerOutput {
+  text: string;
+  replyMarkup?: InlineKeyboardMarkup;
+}
+
+/**
+ * Turns one payload into the user-facing Bahasa Indonesia message. May return a
+ * bare string (plain message) or `{ text, replyMarkup? }` when buttons are needed.
+ */
+export type Composer = (
+  payload: ProactivePayload,
+  ctx: ComposerCtx,
+) => Promise<string | ComposerOutput>;
 
 /**
  * A detector is PURE given repos + an injected `now`. Returns 0..N payloads.

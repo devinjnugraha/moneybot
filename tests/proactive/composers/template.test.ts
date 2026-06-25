@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, templateCompose } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -123,5 +123,38 @@ describe('budgetThresholdTemplate', () => {
     }));
     expect(out).toContain('🚨');
     expect(out).toContain('105%');
+  });
+});
+
+describe('morningGlanceTemplate', () => {
+  const morningPayload = (data: Record<string, unknown>): ProactivePayload => ({
+    triggerType: 'morning_glance',
+    dedupKey: 'morning-glance:2026-06-22',
+    channel: 'llm',
+    data,
+  });
+
+  it('renders balances, upcoming bills, due-today bills, and yesterday activity', () => {
+    const out = templateCompose(morningPayload({
+      balances: [{ name: 'BCA', type: 'bank', balance: 5_200_000 }],
+      upcoming: [{ name: 'Spotify', amount: 59_900, account: 'BCA CC', dueDate: '2026-06-25' }],
+      yesterday: { count: 2, totalSpend: 85_000 },
+      todayDueBills: [{ name: 'Netflix', amount: 75_000, account: 'BCA CC' }],
+    }));
+    expect(out).toContain('BCA');
+    expect(out).toContain('5.200.000');
+    expect(out).toContain('Spotify');
+    expect(out).toContain('Netflix');
+    expect(out).toContain('75.000');
+    expect(out).toContain('2 catatan');
+    expect(out).not.toContain('Rp');
+  });
+
+  it('notes the logging gap when yesterday had no expenses', () => {
+    const out = morningGlanceTemplate(morningPayload({
+      balances: [{ name: 'Cash', type: 'cash', balance: 300_000 }],
+      upcoming: [], yesterday: null, todayDueBills: [],
+    }));
+    expect(out).toContain('belum ada catatan');
   });
 });

@@ -64,7 +64,7 @@ describe('runProactivePass', () => {
 
     await runProactivePass({ detector, composer, repos, policy: POLICY, now: NOW, send });
 
-    expect(send).toHaveBeenCalledWith('c1', 'COMPOSED');
+    expect(send).toHaveBeenCalledWith('c1', 'COMPOSED', undefined);
     expect(repos.outreach.record).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', dedupKey: 'summary:2026-06-22', sentAt: NOW }));
     expect(repos.sessions.set).toHaveBeenCalledWith(expect.objectContaining({ chatId: 'c1', lastActivityAt: NOW.toISOString() }));
     const setArg = (repos.sessions.set as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { turns: { role: string; content: string }[] };
@@ -132,7 +132,7 @@ describe('runProactivePass', () => {
     await runProactivePass({ detector, composer, repos, policy: POLICY, now: NOW, send });
     expect(logEvent).toHaveBeenCalledWith('error', expect.any(String), expect.objectContaining({ userId: 'u1', error: 'boom' }));
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith('c2', 'OK');
+    expect(send).toHaveBeenCalledWith('c2', 'OK', undefined);
   });
 
   it('records [] payload (nothing to say) without sending', async () => {
@@ -142,5 +142,15 @@ describe('runProactivePass', () => {
     await runProactivePass({ detector, composer: vi.fn(), repos, policy: POLICY, now: NOW, send });
     expect(send).not.toHaveBeenCalled();
     expect(repos.outreach.record).not.toHaveBeenCalled();
+  });
+
+  it('forwards a composer replyMarkup to send (button-bearing messages)', async () => {
+    const repos = mockRepos();
+    const send = vi.fn(async () => undefined);
+    const kb = { inline_keyboard: [[{ text: '✅', callback_data: 'rec:x:confirm' }]] };
+    const detector = vi.fn(async () => [summaryPayload]);
+    const composer = vi.fn(async () => ({ text: 'GLANCE', replyMarkup: kb }));
+    await runProactivePass({ detector, composer, repos, policy: POLICY, now: NOW, send });
+    expect(send).toHaveBeenCalledWith('c1', 'GLANCE', kb);
   });
 });

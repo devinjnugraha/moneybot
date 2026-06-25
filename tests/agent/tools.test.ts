@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { CoreTool } from 'ai';
 import { buildTools } from '../../src/agent/tools.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
+import { todayWIB } from '../../src/domain/time.js';
 import { logEvent } from '../../src/utils/logger.js';
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -65,7 +66,7 @@ type ToolCallResult = {
   field?: string;
   matches?: unknown[];
   options?: Record<string, unknown> | null;
-  data?: { transaction?: { transactionId?: string }; budget?: { spent: number; limit: number; exceeded: boolean } };
+  data?: { transaction?: { transactionId?: string }; budget?: { spent: number; limit: number; exceeded: boolean }; insightContext?: { balanceAfter: number; todayCountInCategory: number; todaySpendInCategory: number; weekSpendInCategory: number; budgetSpentPct?: number; budgetRemaining?: number } };
   // get_report (T15) read-tool fields
   total?: number;
   count?: number;
@@ -1242,5 +1243,73 @@ describe('buildTools — remember_preference / forget_preference', () => {
     const { forget_preference } = buildTools({ userId: 'u1', repos, hasAccount: false });
     const res = await callExec(forget_preference, { key: 'k' });
     expect(res).toEqual({ status: 'error', message: 'Gagal menghapus preferensi. Coba lagi.' });
+  });
+});
+
+describe('buildTools — insightContext (PROACTIVE_INSIGHT_ENABLED default true)', () => {
+  it('create_expense ok result carries balanceAfter + today/week category context', async () => {
+    const today = todayWIB(new Date());
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 80_000, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(async () => undefined),
+        update: vi.fn(),
+      } as never,
+      transactions: {
+        create: vi.fn(async (i: { amount: number; description: string; categoryId?: string }) => ({ transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: i.amount, description: i.description, categoryId: i.categoryId, accountId: 'a1', isRecurringInstance: false, date: today, createdAt: '', updatedAt: '' })),
+        createTransfer: vi.fn(),
+        findByDateRange: vi.fn(async () => [
+          { transactionId: 'prev', userId: 'u1', type: 'expense' as const, amount: 25_000, description: 'kopi', categoryId: 'food.coffee', accountId: 'a1', isRecurringInstance: false, date: today, createdAt: '', updatedAt: '' },
+        ]),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, { description: 'kopi', amount: 25_000, accountId: 'a1', categoryId: 'food.coffee' });
+    expect(res.status).toBe('ok');
+    expect(res.data?.insightContext).toBeDefined();
+    expect(res.data?.insightContext?.balanceAfter).toBe(80_000);
+    expect(res.data?.insightContext?.todayCountInCategory).toBeGreaterThanOrEqual(1);
+    expect(res.data?.insightContext?.weekSpendInCategory).toBeGreaterThanOrEqual(25_000);
+  });
+
+  it('create_transfer ok result carries balanceAfter only (no category context)', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : { accountId: 'a2', userId: 'u1', name: 'Cash', type: 'cash' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' },
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(async (i: { fromAccountId: string; toAccountId: string; amount: number; description: string }) => ({
+          transactionId: 't-transfer', userId: 'u1', type: 'transfer' as const, amount: i.amount, description: i.description,
+          accountId: i.fromAccountId, toAccountId: i.toAccountId, isRecurringInstance: false, date: '', createdAt: '', updatedAt: '',
+        })),
+        findByDateRange: vi.fn(async () => []),
+        findByAccountAndDateRange: vi.fn(),
+        findLatestByUserId: vi.fn(),
+        findById: vi.fn(),
+        update: vi.fn(),
+        softDelete: vi.fn(),
+      } as never,
+    });
+    const { create_transfer } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_transfer, { fromAccountId: 'a1', toAccountId: 'a2', amount: 30_000, description: 'transfer' });
+    expect(res.status).toBe('ok');
+    expect(res.data?.insightContext?.balanceAfter).toBe(100_000);
+    expect(res.data?.insightContext?.todayCountInCategory).toBe(0);
   });
 });
