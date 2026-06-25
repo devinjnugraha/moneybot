@@ -249,7 +249,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     description:
       'Simpan preferensi user (akun favorit, tanggal gajian, kebiasaan kategorisasi, dll.). ' +
       'Upsert by key — kalau key sudah ada, nilainya diganti. Pakai key singkat yang deskriptif, ' +
-      'simpan nilai singkat saja.',
+      'simpan nilai singkat tapi sedetail mungkin yang kaya akan konteks yang membantu.',
     parameters: z.object({
       key: z.string().describe('Label singkat, mis. "default_account", "salary_day"'),
       value: z.string().describe('Nilai preferensi bebas'),
