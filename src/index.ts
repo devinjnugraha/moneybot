@@ -2,12 +2,12 @@
 // NODE_OPTIONS=--no-deprecation doesn't work through npm on Windows).
 process.noDeprecation = true;
 
+import { createOpenAI } from '@ai-sdk/openai';
 import { config } from './config/index.js';
 import { migrate } from './adapters/neon/migrate.js';
 import { seed } from './adapters/neon/seed.js';
 import { pool } from './adapters/neon/pool.js';
 import { createRepos } from './adapters/neon/repos.js';
-import { createOpenRouterModel } from './adapters/openrouter/client.js';
 import { createRunner } from './agent/run-agent.js';
 import { handleMessage } from './agent/orchestrator.js';
 import { buildSystemPrompt } from './agent/system-prompt.js';
@@ -22,10 +22,11 @@ async function main() {
   await migrate();
   await seed();
 
-  const model = createOpenRouterModel({
+  const openrouter = createOpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
     apiKey: config.OPENROUTER_API_KEY,
-    model: config.OPENROUTER_MODEL,
   });
+  const model = openrouter(config.OPENROUTER_MODEL);
   const run = createRunner(model);
   const repos = createRepos();
 
