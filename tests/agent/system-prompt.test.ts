@@ -114,3 +114,16 @@ describe('buildSystemPrompt — post-write insight (rule 4)', () => {
     expect(prompt).toMatch(/budget/);
   });
 });
+
+describe('buildSystemPrompt — Telegram formatting (rule 13: no markdown tables)', () => {
+  const prompt = buildSystemPrompt('2026-06-22');
+
+  it('forbids markdown tables because Telegram cannot render them', () => {
+    expect(prompt).toContain('DILARANG TABEL');
+    expect(prompt).toMatch(/tidak merender tabel/);
+  });
+
+  it('mandates a one-line-per-item alternative for lists and reports', () => {
+    expect(prompt).toMatch(/SATU BARIS PER ITEM/i);
+  });
+});

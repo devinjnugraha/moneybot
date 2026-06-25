@@ -6,16 +6,68 @@ import { formatIDR } from '../utils/format.js';
 // src/utils/format.ts (so the agent layer can use it without a transport import).
 export { formatIDR };
 
+/** A markdown table separator row: only `|`, `:`, `-`, and whitespace, with ≥1 `-`. */
+function isTableSeparator(line: string): boolean {
+  const t = line.trim();
+  return t.includes('-') && /^[|:\s-]+$/.test(t);
+}
+
+/** A line that could be a table row (header or data): non-empty and contains `|`. */
+function isTableRow(line: string): boolean {
+  return line.trim().length > 0 && line.includes('|');
+}
+
+/** Split a table row into trimmed cells, tolerating an optional leading/trailing pipe. */
+function parseRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((c) => c.trim());
+}
+
+/**
+ * Convert markdown table blocks into Telegram-readable lines. Telegram's HTML
+ * parse-mode has no table support, so a raw table renders as a wall of pipes.
+ * Each block becomes a header line + one bullet (`•`) per data row, cells joined
+ * by a middle dot (`·`); the separator row is dropped. Runs BEFORE the inline
+ * markdown pass so inline bold and HTML escaping still apply to cell contents.
+ */
+function convertMarkdownTables(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1]!)) {
+      const headerCells = parseRow(line);
+      const rowCells: string[][] = [];
+      i += 2; // skip header + separator
+      while (i < lines.length && isTableRow(lines[i]!) && !isTableSeparator(lines[i]!)) {
+        rowCells.push(parseRow(lines[i]!));
+        i += 1;
+      }
+      out.push(
+        [headerCells.join(' · '), ...rowCells.map((r) => '• ' + r.join(' · '))].join('\n'),
+      );
+    } else {
+      out.push(line);
+      i += 1;
+    }
+  }
+  return out.join('\n');
+}
+
 /**
  * Convert LLM-generated Markdown formatting to Telegram HTML parse-mode tags.
- * Escapes bare HTML entities first, then converts:
+ * Markdown tables are flattened first (Telegram can't render them), then HTML
+ * entities are escaped, then inline markup is converted:
  *   **bold**   → <b>bold</b>
  *   *italic*   → <i>italic</i>
  *   `code`     → <code>code</code>
  *   [text](url) → <a href="url">text</a>
  */
 export function markdownToTelegramHTML(text: string): string {
-  return text
+  return convertMarkdownTables(text)
     // Escape HTML entities first so literal <, >, & don't break parsing
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

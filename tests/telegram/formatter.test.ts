@@ -109,6 +109,98 @@ describe('markdownToTelegramHTML', () => {
   });
 });
 
+describe('markdownToTelegramHTML — markdown tables (Telegram has no table support)', () => {
+  it('converts a table into a header line + one bullet per row (no pipes, no separator)', () => {
+    const md =
+      '| Kategori | Total | Jumlah Transaksi |\n' +
+      '|----------|-------|------------------|\n' +
+      '| 🍜 Makan di Luar | 123.700 | 3 |\n' +
+      '| ⛽ Bensin | 123.000 | 1 |';
+    expect(markdownToTelegramHTML(md)).toBe(
+      'Kategori · Total · Jumlah Transaksi\n' +
+      '• 🍜 Makan di Luar · 123.700 · 3\n' +
+      '• ⛽ Bensin · 123.000 · 1',
+    );
+  });
+
+  it('converts a table embedded between paragraphs and keeps the surrounding text', () => {
+    const md =
+      '**Pengeluaran per Kategori (25 Jun 2026)**\n\n' +
+      '| Kategori | Total |\n' +
+      '|----------|-------|\n' +
+      '| 🍜 Makan di Luar | 123.700 |\n\n' +
+      '**Total:** 351.723';
+    const out = markdownToTelegramHTML(md);
+    expect(out).toContain('<b>Pengeluaran per Kategori (25 Jun 2026)</b>');
+    expect(out).toContain('Kategori · Total');
+    expect(out).toContain('• 🍜 Makan di Luar · 123.700');
+    expect(out).toContain('<b>Total:</b> 351.723');
+    expect(out).not.toContain('|');
+    expect(out).not.toContain('---');
+  });
+
+  it('still applies inline bold to cell contents after table conversion', () => {
+    const md =
+      '| Nama | **Total** |\n' +
+      '|------|-----------|\n' +
+      '| BCA  | **1.500.000** |';
+    expect(markdownToTelegramHTML(md)).toBe(
+      'Nama · <b>Total</b>\n' +
+      '• BCA · <b>1.500.000</b>',
+    );
+  });
+
+  it('escapes HTML entities inside table cells', () => {
+    const md =
+      '| Kondisi | Nilai |\n' +
+      '|---------|-------|\n' +
+      '| a < b | x & y |';
+    expect(markdownToTelegramHTML(md)).toBe(
+      'Kondisi · Nilai\n' +
+      '• a &lt; b · x &amp; y',
+    );
+  });
+
+  it('leaves a lone prose pipe untouched (no separator row ⇒ not a table)', () => {
+    expect(markdownToTelegramHTML('Pilih: ya | tidak')).toBe('Pilih: ya | tidak');
+  });
+
+  it('parses tables without a leading pipe', () => {
+    const md =
+      'Kategori | Total\n' +
+      '--------|------\n' +
+      'Makan | 50.000';
+    expect(markdownToTelegramHTML(md)).toBe(
+      'Kategori · Total\n' +
+      '• Makan · 50.000',
+    );
+  });
+
+  it('tolerates alignment colons in the separator row', () => {
+    const md =
+      '| Nama | Saldo |\n' +
+      '|:-----|-----:|\n' +
+      '| BCA  | 100 |';
+    expect(markdownToTelegramHTML(md)).toBe(
+      'Nama · Saldo\n' +
+      '• BCA · 100',
+    );
+  });
+
+  it('renders the real transcript records table without pipes or separator dashes', () => {
+    const md =
+      '| No | TransactionId | Deskripsi | Kategori | Akun | Nominal |\n' +
+      '|----|---------------|-----------|----------|------|---------|\n' +
+      '| 1 | 0ee67112 | Beli Chateraise | 🍪 Jajanan | 🏦 CIMB | 57.000 |\n' +
+      '| 2 | 1a4820e0 | Makan Ramen | 🍜 Makan di Luar | 🏦 CIMB | 77.700 |';
+    const out = markdownToTelegramHTML(md);
+    expect(out).not.toContain('|');
+    expect(out).not.toContain('---');
+    expect(out).toContain('• 1 · 0ee67112 · Beli Chateraise · 🍪 Jajanan · 🏦 CIMB · 57.000');
+    expect(out).toContain('• 2 · 1a4820e0 · Makan Ramen');
+  });
+});
+
 describe('dueBillsKeyboard', () => {
   it('returns undefined when there are no due bills', () => {
     expect(dueBillsKeyboard([])).toBeUndefined();
