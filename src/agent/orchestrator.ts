@@ -79,8 +79,11 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
 		session = freshSession(args.chatId, user.userId, nowIso);
 	}
 
-	// 3. Append the user turn
-	const messages: CoreMessage[] = [...session.turns, { role: 'user', content: args.text }];
+	// 3. Append the user turn, then trim before sending to the model.
+	// This prevents oversized histories from being sent to the LLM.
+	const untrimmedMessages: CoreMessage[] = [...session.turns, { role: 'user', content: args.text }];
+
+	const messages: CoreMessage[] = trimTurns(untrimmedMessages, args.contextWindowTurns);
 
 	// 4. Build tools (gated by onboarding state). `accounts` was fetched during
 	//    enrichment above and reused here (single fetch, no double-read).
@@ -119,15 +122,18 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
 		replyLength: result.text.length,
 	});
 
-	// 6. Append response messages + trim
-	messages.push(...result.responseMessages);
-	const trimmed = trimTurns(messages, args.contextWindowTurns);
+	// 6. Append response messages + trim again before persistence.
+	// The first trim protects the LLM call; this second trim protects stored session size.
+	const persistedMessages: CoreMessage[] = trimTurns(
+		[...messages, ...result.responseMessages],
+		args.contextWindowTurns
+	);
 
 	// 7. Persist session
 	const lastTxnId = extractLastTransactionId(result.toolResults) ?? session.lastTransactionId;
 	await args.repos.sessions.set({
 		...session,
-		turns: trimmed,
+		turns: persistedMessages,
 		lastTransactionId: lastTxnId,
 		lastActivityAt: nowIso,
 	});
