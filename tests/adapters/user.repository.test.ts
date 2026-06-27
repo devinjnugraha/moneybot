@@ -29,6 +29,15 @@ describe('NeonUserRepository', () => {
     const found = await repo.findById(created.userId);
     expect(found?.name).toBe('New');
   });
+
+  it('creates a user with default pending status and maps it back', async () => {
+    const repo = new NeonUserRepository();
+    const chatId = uniqueChatId();
+    const created = await repo.create({ telegramChatId: chatId, name: 'Devin' });
+    expect(created.status).toBe('pending');
+    const found = await repo.findByTelegramChatId(chatId);
+    expect(found?.status).toBe('pending');
+  });
 });
 
 describe('NeonUserRepository.findAll', () => {

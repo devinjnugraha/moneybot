@@ -3,12 +3,15 @@ import type { CoreMessage } from 'ai';
 export type AccountType = 'cash' | 'bank' | 'card';
 export type TransactionType = 'expense' | 'income' | 'transfer';
 
+export type UserStatus = 'pending' | 'approved' | 'rejected';
+
 export interface User {
   userId: string;
   telegramChatId: string;
   name: string;
   language: 'id' | 'en';
   timezone: string;
+  status: UserStatus;
   createdAt: string;
   updatedAt: string;
 }

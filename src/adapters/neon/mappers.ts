@@ -1,5 +1,6 @@
 import type {
   User,
+  UserStatus,
   Account,
   Transaction,
   BudgetCode,
@@ -36,6 +37,7 @@ export function mapUser(r: Row): User {
     name: str(r, 'name'),
     language: str(r, 'language') === 'en' ? 'en' : 'id',
     timezone: str(r, 'timezone'),
+    status: str(r, 'status') as UserStatus,
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
   };
