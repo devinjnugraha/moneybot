@@ -9,7 +9,7 @@ import { seed } from './adapters/neon/seed.js';
 import { pool } from './adapters/neon/pool.js';
 import { createRepos } from './adapters/neon/repos.js';
 import { createRunner } from './agent/run-agent.js';
-import { handleMessage } from './agent/orchestrator.js';
+import { routeMessage } from './telegram/access.js';
 import { buildSystemPrompt } from './agent/system-prompt.js';
 import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
@@ -22,6 +22,12 @@ async function main() {
   await migrate();
   await seed();
 
+  logEvent(
+    config.ADMIN_CHAT_IDS.length ? 'info' : 'warn',
+    'approval gate',
+    { adminCount: config.ADMIN_CHAT_IDS.length },
+  );
+
   const openrouter = createOpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
     apiKey: config.OPENROUTER_API_KEY,
@@ -31,18 +37,16 @@ async function main() {
   const repos = createRepos();
 
   registerNudgesCommand(repos);
-  registerMessageHandler(async (text, chatId) => {
-    const { reply } = await handleMessage({
-      text,
-      chatId,
-      repos,
-      run,
-      system: buildSystemPrompt(todayWIB()),
-      contextWindowTurns: config.CONTEXT_WINDOW_TURNS,
-      sessionIdleTimeoutMinutes: config.SESSION_IDLE_TIMEOUT_MINUTES,
-    });
-    return reply;
+  const route = routeMessage({
+    repos,
+    run,
+    buildSystem: () => buildSystemPrompt(todayWIB()),
+    contextWindowTurns: config.CONTEXT_WINDOW_TURNS,
+    sessionIdleTimeoutMinutes: config.SESSION_IDLE_TIMEOUT_MINUTES,
+    adminChatIds: config.ADMIN_CHAT_IDS,
+    notify: async (id, msg) => { await bot.api.sendMessage(id, msg); },
   });
+  registerMessageHandler(async (text, chatId) => route(text, chatId));
 
   startCronJobs(repos, model);
   registerCallbackHandler(repos);
