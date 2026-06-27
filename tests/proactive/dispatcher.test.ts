@@ -14,13 +14,13 @@ const POLICY: ProactivePolicy = {
 };
 
 function mockRepos(overrides: {
-  users?: { userId: string; telegramChatId: string }[];
+  users?: { userId: string; telegramChatId: string; status?: 'pending' | 'approved' | 'rejected' }[];
   muted?: boolean;
   existsKey?: boolean;
   countSince?: number;
   existingSession?: { chatId: string; userId: string; turns: unknown[]; lastActivityAt: string } | null;
 } = {}): Repos {
-  const users = overrides.users ?? [{ userId: 'u1', telegramChatId: 'c1' }];
+  const users = overrides.users ?? [{ userId: 'u1', telegramChatId: 'c1', status: 'approved' }];
   return {
     users: {
       findByTelegramChatId: vi.fn(), findById: vi.fn(),
@@ -119,10 +119,23 @@ describe('runProactivePass', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('skips non-approved users (only approved users are sent to)', async () => {
+    const repos = mockRepos({ users: [
+      { userId: 'u1', telegramChatId: 'c1', status: 'pending' },
+      { userId: 'u2', telegramChatId: 'c2', status: 'approved' },
+    ] });
+    const send = vi.fn(async () => undefined);
+    const detector = vi.fn(async () => [summaryPayload]);
+    const composer = vi.fn(async () => 'OK');
+    await runProactivePass({ detector, composer, repos, policy: POLICY, now: NOW, send });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith('c2', 'OK', undefined);
+  });
+
   it('catches a detector error, logs it, and continues to the next user', async () => {
     const repos = mockRepos({ users: [
-      { userId: 'u1', telegramChatId: 'c1' },
-      { userId: 'u2', telegramChatId: 'c2' },
+      { userId: 'u1', telegramChatId: 'c1', status: 'approved' },
+      { userId: 'u2', telegramChatId: 'c2', status: 'approved' },
     ] });
     const send = vi.fn(async () => undefined);
     const detector = vi.fn()

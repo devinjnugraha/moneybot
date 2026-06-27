@@ -40,7 +40,8 @@ async function seedAssistantTurn(
 export async function runProactivePass(o: RunProactivePassOptions): Promise<void> {
   if (!o.policy.enabled) return;
 
-  const users = await o.repos.users.findAll();
+  // Approval gate: never proactively message (or spend LLM on) unapproved users.
+  const users = (await o.repos.users.findAll()).filter((u) => u.status === 'approved');
   for (const user of users) {
     try {
       const settings = await o.repos.proactiveSettings.get(user.userId);
