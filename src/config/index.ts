@@ -6,6 +6,10 @@ const schema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   OPENROUTER_API_KEY: z.string().min(1),
   OPENROUTER_MODEL: z.string().default('anthropic/claude-3-haiku'),
+  // "123,456" -> ["123","456"] (strings; chat ids exceed Number.MAX_SAFE_INTEGER and may be negative).
+  ADMIN_CHAT_IDS: z.string()
+    .default('')
+    .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
   CONTEXT_WINDOW_TURNS: z.coerce.number().int().positive().default(20),
   SESSION_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(30),
   PROACTIVE_MORNING_GLANCE_CRON: z.string().default('0 8 * * *'),
