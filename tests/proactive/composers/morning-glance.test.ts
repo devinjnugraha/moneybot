@@ -36,6 +36,17 @@ describe('createMorningGlanceComposer', () => {
     expect((out as { replyMarkup?: unknown }).replyMarkup).toBeUndefined();
   });
 
+  it('injects today\'s WIB date into the morning-glance system prompt', async () => {
+    generateText.mockResolvedValue({ text: 'Pagi!' });
+    const compose = createMorningGlanceComposer(model);
+    // 2026-06-28T03:00:00Z -> 10:00 WIB, Sunday 28 Jun 2026.
+    await compose(payload([]), { now: new Date('2026-06-28T03:00:00Z') });
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({ system: expect.stringContaining('Hari ini (WIB): Minggu, 28 Jun 2026') }),
+    );
+  });
+
   it('falls back to the template when generateText throws', async () => {
     generateText.mockRejectedValue(new Error('model down'));
     const compose = createMorningGlanceComposer(model);

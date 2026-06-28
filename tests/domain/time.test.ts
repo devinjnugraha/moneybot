@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { daysBetween, addDays, wibISOWeek, wibISOWeekLabel, wibISOWeekMonday } from '../../src/domain/time.js';
+import {
+  daysBetween,
+  addDays,
+  wibISOWeek,
+  wibISOWeekLabel,
+  wibISOWeekMonday,
+  todayWibDisplay,
+} from '../../src/domain/time.js';
 
 describe('daysBetween', () => {
   it('counts whole days between two YYYY-MM-DD dates', () => {
@@ -67,6 +74,19 @@ describe('wibISOWeek / wibISOWeekLabel', () => {
   it('assigns a late-December date to the next year ISO week (rollover)', () => {
     expect(wibISOWeek(ROLLOVER_NOW)).toEqual({ year: 2026, week: 1 });
     expect(wibISOWeekLabel(ROLLOVER_NOW)).toBe('2026-W01');
+  });
+});
+
+describe('todayWibDisplay', () => {
+  // 2026-06-28T03:00:00Z is 10:00 WIB -> same calendar day, a Sunday.
+  it('formats as "<Weekday-ID>, DD Mon YYYY" in WIB', () => {
+    expect(todayWibDisplay(new Date('2026-06-28T03:00:00Z'))).toBe('Minggu, 28 Jun 2026');
+  });
+
+  // 2026-06-22T17:00:00Z is 2026-06-23T00:00 WIB: still the 22nd in UTC but the
+  // 23rd (Tuesday) in WIB — proves the formatting honours the timezone.
+  it('rolls the calendar day at the WIB midnight boundary', () => {
+    expect(todayWibDisplay(new Date('2026-06-22T17:00:00Z'))).toBe('Selasa, 23 Jun 2026');
   });
 });
 

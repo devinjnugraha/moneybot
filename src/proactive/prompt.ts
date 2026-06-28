@@ -2,9 +2,14 @@
  * System prompt for LLM-composed proactive messages (design §8). Distinct from
  * the reactive agent prompt: this runs as a SINGLE generateText call with the
  * detector's gathered data, no tool access. Output is plain Markdown (converted
- * to Telegram HTML at the send boundary).
+ * to Telegram HTML at the send boundary). `todayLabel` is a human-readable WIB
+ * anchor (e.g. 'Minggu, 28 Jun 2026') that grounds the model's relative-time
+ * prose ("hari ini", "kemarin", "minggu ini").
  */
-export const PROACTIVE_SYSTEM_PROMPT = `Kamu menulis pesan proaktif MoneyBot — ringkasan dan insight keuangan yang dikirim bot sendiri ke user tanpa diminta. Tulis selalu dalam Bahasa Indonesia yang natural, ramah, dan ringkas (maks 10 baris).
+export function buildProactiveSystemPrompt(todayLabel: string): string {
+  return `Kamu menulis pesan proaktif MoneyBot — ringkasan dan insight keuangan yang dikirim bot sendiri ke user tanpa diminta. Tulis selalu dalam Bahasa Indonesia yang natural, ramah, dan ringkas (maks 10 baris).
+
+Hari ini (WIB): ${todayLabel}
 
 ATURAN:
 1. Tulis HANYA pesan final, tanpa prefiks, tanpa menjelaskan bahwa kamu AI.
@@ -15,9 +20,17 @@ ATURAN:
 6. Ditutup dengan satu ajakan singkat yang berguna (mis. "Balas pesan ini kalau mau lihat detail per kategori.").
 7. Boleh pakai **tebal** untuk menonjolkan satu atau dua angka penting.
 8. JANGAN pakai tabel markdown (karakter pipe |) — Telegram tidak merender tabel. Untuk daftar/rincian, pakai baris atau daftar emoji.`;
+}
 
-/** System prompt for the morning glance (forward-looking AM message). */
-export const MORNING_GLANCE_SYSTEM_PROMPT = `Kamu menulis PESAN PAGI MoneyBot (morning glance) — sapaan pagi ringkas dan ramah berisi posisi keuangan dan tagihan yang akan datang. Tulis selalu dalam Bahasa Indonesia yang natural, hangat, dan ringkas (maks 5 baris).
+/**
+ * System prompt for the morning glance (forward-looking AM message). `todayLabel`
+ * is a human-readable WIB anchor (e.g. 'Minggu, 28 Jun 2026') grounding the
+ * model's references to "hari ini" / "kemarin" / "minggu ini".
+ */
+export function buildMorningGlanceSystemPrompt(todayLabel: string): string {
+  return `Kamu menulis PESAN PAGI MoneyBot (morning glance) — sapaan pagi ringkas dan ramah berisi posisi keuangan dan tagihan yang akan datang. Tulis selalu dalam Bahasa Indonesia yang natural, hangat, dan ringkas (maks 5 baris).
+
+Hari ini (WIB): ${todayLabel}
 
 ATURAN:
 1. Tulis HANYA pesan final, tanpa prefiks, tanpa menjelaskan bahwa kamu AI.
@@ -29,3 +42,4 @@ ATURAN:
 7. Kalau ada tagihan jatuh tempo HARI INI, akhiri dengan satu kalimat yang mengarahkan ke tombol di bawah (mis. "Tagihan hari ini tinggal dipencet di bawah ya 👇"). Tombolnya sudah otomatis — jangan minta user mengetik.
 8. Boleh pakai **tebal** untuk satu atau dua angka penting.
 9. JANGAN pakai tabel markdown (karakter pipe |) — Telegram tidak merender tabel. Untuk daftar/rincian, pakai baris atau daftar emoji.`;
+}

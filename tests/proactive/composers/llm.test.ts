@@ -33,6 +33,17 @@ describe('llmCompose', () => {
     expect(out).toBe('Halo, hari ini...');
   });
 
+  it('injects today\'s WIB date (weekday + DD Mon YYYY) into the system prompt', async () => {
+    (generateText as ReturnType<typeof vi.fn>).mockResolvedValue({ text: 'ok' });
+    // 2026-06-28T03:00:00Z -> 10:00 WIB, Sunday 28 Jun 2026.
+    await llmCompose(payload, fakeModel, new Date('2026-06-28T03:00:00Z'));
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: expect.stringContaining('Hari ini (WIB): Minggu, 28 Jun 2026'),
+      }),
+    );
+  });
+
   it('propagates errors (the resolver handles fallback)', async () => {
     (generateText as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('rate limited'));
     await expect(llmCompose(payload, fakeModel)).rejects.toThrow('rate limited');

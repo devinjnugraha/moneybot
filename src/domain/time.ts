@@ -10,6 +10,26 @@ export function todayWIB(now: Date = new Date()): string {
   }).format(now);
 }
 
+/**
+ * Today in WIB as a readable anchor for LLM prose: '<Weekday-ID>, DD Mon YYYY'
+ * (e.g. 'Minggu, 28 Jun 2026'). Weekday is Bahasa Indonesia; the date uses the
+ * same English month abbreviation the agent prompt uses for display. Mirrors
+ * todayWIB's Intl/tz approach. Used to ground the proactive composer prompts.
+ */
+export function todayWibDisplay(now: Date = new Date()): string {
+  const weekday = new Intl.DateTimeFormat('id-ID', {
+    timeZone: TZ,
+    weekday: 'long',
+  }).format(now);
+  const date = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(now);
+  return `${weekday}, ${date}`;
+}
+
 /** ISO 8601 timestamp for "now" (UTC; TZ-aware consumers interpret). */
 export function nowWIB(now: Date = new Date()): string {
   // toISOString is UTC; fine for timestamps (created_at etc.) which are TZ-aware.

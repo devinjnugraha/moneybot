@@ -1,6 +1,7 @@
 import { generateText } from 'ai';
 import type { LanguageModel } from 'ai';
-import { MORNING_GLANCE_SYSTEM_PROMPT } from '../prompt.js';
+import { buildMorningGlanceSystemPrompt } from '../prompt.js';
+import { todayWibDisplay } from '../../domain/time.js';
 import { dueBillsKeyboard } from '../../telegram/formatter.js';
 import { morningGlanceTemplate } from './template.js';
 import { logEvent } from '../../utils/logger.js';
@@ -8,7 +9,7 @@ import type { Composer, ComposerOutput } from '../types.js';
 
 /** Compose the morning glance: LLM text + a programmatic due-bills keyboard. */
 export function createMorningGlanceComposer(model: LanguageModel): Composer {
-  return async (payload) => {
+  return async (payload, ctx) => {
     const bills = (payload.data as { todayDueBills?: { recurringId: string; name: string }[] }).todayDueBills ?? [];
     const replyMarkup = dueBillsKeyboard(bills);
 
@@ -16,7 +17,7 @@ export function createMorningGlanceComposer(model: LanguageModel): Composer {
     try {
       const { text: out } = await generateText({
         model,
-        system: MORNING_GLANCE_SYSTEM_PROMPT,
+        system: buildMorningGlanceSystemPrompt(todayWibDisplay(ctx.now)),
         prompt: `Tulis pesan pagi (morning glance) untuk data berikut:\n\n${JSON.stringify(payload.data, null, 2)}`,
       });
       text = out;

@@ -10,10 +10,10 @@ import { logEvent } from '../../utils/logger.js';
  * failure never silently drops a proactive message (design §11).
  */
 export function createComposer(model: LanguageModel): Composer {
-  return async (payload) => {
+  return async (payload, ctx) => {
     if (payload.channel === 'template') return templateCompose(payload);
     try {
-      return await llmCompose(payload, model);
+      return await llmCompose(payload, model, ctx.now);
     } catch (err) {
       logEvent('warn', 'proactive llm compose failed; falling back to template', {
         triggerType: payload.triggerType,
