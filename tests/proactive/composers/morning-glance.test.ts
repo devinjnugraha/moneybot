@@ -6,6 +6,7 @@ const generateText = vi.fn();
 vi.mock('ai', () => ({ generateText: (...args: unknown[]) => generateText(...args) }));
 
 import { createMorningGlanceComposer } from '../../../src/proactive/composers/morning-glance.js';
+import { buildMorningGlanceSystemPrompt } from '../../../src/proactive/prompt.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const model = {} as never;
@@ -52,5 +53,17 @@ describe('createMorningGlanceComposer', () => {
     const compose = createMorningGlanceComposer(model);
     const out = await compose(payload([]), { now: new Date('2026-06-22T14:00:00Z') });
     expect((out as { text: string }).text).toContain('Pagi');
+  });
+});
+
+describe('buildMorningGlanceSystemPrompt', () => {
+  it('keeps the WIB date anchor and scopes the LLM to greeting + yesterday only', () => {
+    const p = buildMorningGlanceSystemPrompt('Minggu, 28 Jun 2026');
+    expect(p).toContain('Hari ini (WIB): Minggu, 28 Jun 2026');
+    expect(p).toContain('sapaan pagi'); // greeting instruction
+    expect(p).toContain('kemarin'); // yesterday instruction
+    // must NOT instruct the LLM to render saldo/budget/tagihan (deterministic now)
+    expect(p).not.toContain('sebutkan saldo');
+    expect(p).not.toContain('Sebutkan tagihan');
   });
 });
