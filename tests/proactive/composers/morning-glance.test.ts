@@ -65,5 +65,8 @@ describe('buildMorningGlanceSystemPrompt', () => {
     // must NOT instruct the LLM to render saldo/budget/tagihan (deterministic now)
     expect(p).not.toContain('sebutkan saldo');
     expect(p).not.toContain('Sebutkan tagihan');
+    // pin the load-bearing NEW scope text (not just the old wording's absence)
+    expect(p).toContain('HANYA menulis dua baris');
+    expect(p).toContain('Jangan menyebut saldo, budget, atau tagihan');
   });
 });
