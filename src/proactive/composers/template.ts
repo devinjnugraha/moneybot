@@ -5,6 +5,18 @@ function idr(n: number): string {
   return n.toLocaleString('id-ID');
 }
 
+/**
+ * Render a deterministic range bar for a budget fraction. Glyphs (|, em-dash,
+ * bullet) are wrapped in backticks so Telegram renders the span monospace and
+ * bars align across lines. `pct` is a fraction (0..N; values >1 clamp the
+ * bullet at the right edge). `width` is the inner cell count (default 10).
+ */
+export function renderBudgetBar(pct: number, width = 10): string {
+  const left = Math.min(width, Math.max(0, Math.round(pct * width)));
+  const right = width - left;
+  return '`|' + '—'.repeat(left) + '•' + '—'.repeat(right) + '|`';
+}
+
 interface SummaryCategory {
   id: string;
   name: string;

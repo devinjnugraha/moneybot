@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -156,5 +156,33 @@ describe('morningGlanceTemplate', () => {
       upcoming: [], yesterday: null, todayDueBills: [],
     }));
     expect(out).toContain('belum ada catatan');
+  });
+});
+
+describe('renderBudgetBar', () => {
+  it('wraps the bar in backticks so Telegram renders it monospace', () => {
+    expect(renderBudgetBar(0.75)).toMatch(/^`/);
+    expect(renderBudgetBar(0.75)).toMatch(/`$/);
+  });
+
+  it('places the bullet proportionally and keeps a fixed inner width of 10', () => {
+    // 0%   -> bullet at far left
+    expect(renderBudgetBar(0)).toBe('`|•——————————|`');
+    // 50%  -> 5 dashes, bullet, 5 dashes
+    expect(renderBudgetBar(0.5)).toBe('`|—————•—————|`');
+    // 100% -> bullet at far right
+    expect(renderBudgetBar(1)).toBe('`|——————————•|`');
+  });
+
+  it('clamps the bullet at the right edge when over budget', () => {
+    expect(renderBudgetBar(1.2)).toBe('`|——————————•|`');
+  });
+
+  it('always has exactly 10 inner cells (pipes excluded)', () => {
+    for (const pct of [0, 0.12, 0.3, 0.5, 0.75, 0.99, 1, 1.5]) {
+      const inner = renderBudgetBar(pct).slice(2, -2); // strip backtick + pipe on each side
+      expect(inner).toHaveLength(11); // 10 cells + 1 bullet
+      expect([...inner].filter((c) => c === '—').length + 1).toBe(11); // dashes + the bullet
+    }
   });
 });
