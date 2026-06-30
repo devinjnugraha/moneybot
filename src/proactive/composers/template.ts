@@ -17,6 +17,18 @@ export function renderBudgetBar(pct: number, width = 10): string {
   return '`|' + '—'.repeat(left) + '•' + '—'.repeat(right) + '|`';
 }
 
+interface MGAccount {
+  name: string;
+  balance: number;
+}
+
+/** Render active-account balances as a guaranteed bullet list. '' when empty. */
+export function renderAccountList(balances: readonly MGAccount[]): string {
+  if (balances.length === 0) return '';
+  const lines = balances.map((b) => `• ${b.name} ${idr(b.balance)}`);
+  return `🏦 Saldo\n${lines.join('\n')}`;
+}
+
 interface SummaryCategory {
   id: string;
   name: string;

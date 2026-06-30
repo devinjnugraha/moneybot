@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -184,5 +184,19 @@ describe('renderBudgetBar', () => {
       expect(inner).toHaveLength(11); // 10 cells + 1 bullet
       expect([...inner].filter((c) => c === '—').length + 1).toBe(11); // dashes + the bullet
     }
+  });
+});
+
+describe('renderAccountList', () => {
+  it('renders one bullet per account under a Saldo header', () => {
+    const out = renderAccountList([
+      { name: 'BCA', balance: 5_200_000 },
+      { name: 'GoPay', balance: 450_000 },
+    ]);
+    expect(out).toBe('🏦 Saldo\n• BCA 5.200.000\n• GoPay 450.000');
+  });
+
+  it('returns empty string when there are no accounts', () => {
+    expect(renderAccountList([])).toBe('');
   });
 });
