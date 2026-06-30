@@ -51,6 +51,38 @@ export function renderBudgetBlock(budgets: readonly MGBudget[]): string {
   return `📊 Budget\n${lines.join('\n')}`;
 }
 
+interface MGUpcoming {
+  name: string;
+  amount: number;
+  account: string;
+  dueDate: string;
+}
+interface MGDue {
+  name: string;
+  amount: number;
+  account: string;
+}
+const UPCOMING_CAP = 3;
+
+/** Render this week's upcoming bills as bullets, capped. '' when empty. */
+export function renderUpcoming(upcoming: readonly MGUpcoming[]): string {
+  if (upcoming.length === 0) return '';
+  const shown = upcoming.slice(0, UPCOMING_CAP);
+  const lines = shown.map((u) => `• ${u.name} — ${idr(u.amount)} via ${u.account} (${u.dueDate})`);
+  if (upcoming.length > UPCOMING_CAP) lines.push(`+${upcoming.length - UPCOMING_CAP} lainnya`);
+  return `📅 Tagihan minggu ini\n${lines.join('\n')}`;
+}
+
+/** Render today's due bills as bullets (name + amount + account). '' when empty. */
+export function renderTodayDue(todayDueBills: readonly MGDue[]): string {
+  if (todayDueBills.length === 0) return '';
+  const lines = todayDueBills.map((b) => `• ${b.name} — ${idr(b.amount)} via ${b.account}`);
+  return `Jatuh tempo hari ini\n${lines.join('\n')}`;
+}
+
+/** Fixed pointer to the inline due-bill keyboard; shared by the LLM path and fallback. */
+export const MORNING_GLANCE_DUE_CTA = 'Tagihan hari ini tinggal dipencet di bawah ya 👇';
+
 interface SummaryCategory {
   id: string;
   name: string;

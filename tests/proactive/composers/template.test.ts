@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock, renderUpcoming, renderTodayDue, MORNING_GLANCE_DUE_CTA } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -237,5 +237,47 @@ describe('renderBudgetBlock', () => {
 
   it('returns empty string when there are no budgets', () => {
     expect(renderBudgetBlock([])).toBe('');
+  });
+});
+
+describe('renderUpcoming', () => {
+  it('lists upcoming bills as bullets with amount, account, dueDate', () => {
+    const out = renderUpcoming([
+      { name: 'Spotify', amount: 59_900, account: 'BCA CC', dueDate: '2026-06-25' },
+    ]);
+    expect(out).toBe('📅 Tagihan minggu ini\n• Spotify — 59.900 via BCA CC (2026-06-25)');
+  });
+
+  it('caps at 3 and notes the rest', () => {
+    const bills = [
+      { name: 'A', amount: 1, account: 'x', dueDate: '2026-06-23' },
+      { name: 'B', amount: 1, account: 'x', dueDate: '2026-06-24' },
+      { name: 'C', amount: 1, account: 'x', dueDate: '2026-06-25' },
+      { name: 'D', amount: 1, account: 'x', dueDate: '2026-06-26' },
+    ];
+    expect(renderUpcoming(bills)).toContain('+1 lainnya');
+  });
+
+  it('returns empty string when there are none', () => {
+    expect(renderUpcoming([])).toBe('');
+  });
+});
+
+describe('renderTodayDue', () => {
+  it('lists today\'s due bills as bullets (name + amount + account)', () => {
+    const out = renderTodayDue([
+      { name: 'Netflix', amount: 75_000, account: 'BCA CC' },
+    ]);
+    expect(out).toBe('Jatuh tempo hari ini\n• Netflix — 75.000 via BCA CC');
+  });
+
+  it('returns empty string when there are none', () => {
+    expect(renderTodayDue([])).toBe('');
+  });
+});
+
+describe('MORNING_GLANCE_DUE_CTA', () => {
+  it('is the fixed pointer line to the due-bill keyboard', () => {
+    expect(MORNING_GLANCE_DUE_CTA).toBe('Tagihan hari ini tinggal dipencet di bawah ya 👇');
   });
 });
