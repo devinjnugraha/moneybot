@@ -83,6 +83,29 @@ export function renderTodayDue(todayDueBills: readonly MGDue[]): string {
 /** Fixed pointer to the inline due-bill keyboard; shared by the LLM path and fallback. */
 export const MORNING_GLANCE_DUE_CTA = 'Tagihan hari ini tinggal dipencet di bawah ya 👇';
 
+/**
+ * Assemble the deterministic morning-glance block from a payload's data:
+ * saldo → budget → upcoming → todayDue, empty sections omitted, joined by blank
+ * lines. Returns '' when all sections are empty. Used by both the LLM composer
+ * path and the template fallback so the structured block is identical.
+ */
+export function renderMorningGlanceBlock(payload: ProactivePayload): string {
+  const d = payload.data as {
+    balances?: MGAccount[];
+    budgets?: MGBudget[];
+    upcoming?: MGUpcoming[];
+    todayDueBills?: MGDue[];
+  };
+  return [
+    renderAccountList(d.balances ?? []),
+    renderBudgetBlock(d.budgets ?? []),
+    renderUpcoming(d.upcoming ?? []),
+    renderTodayDue(d.todayDueBills ?? []),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 interface SummaryCategory {
   id: string;
   name: string;

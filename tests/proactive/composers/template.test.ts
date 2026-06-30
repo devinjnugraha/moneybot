@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock, renderUpcoming, renderTodayDue, MORNING_GLANCE_DUE_CTA } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock, renderUpcoming, renderTodayDue, MORNING_GLANCE_DUE_CTA, renderMorningGlanceBlock } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -279,5 +279,43 @@ describe('renderTodayDue', () => {
 describe('MORNING_GLANCE_DUE_CTA', () => {
   it('is the fixed pointer line to the due-bill keyboard', () => {
     expect(MORNING_GLANCE_DUE_CTA).toBe('Tagihan hari ini tinggal dipencet di bawah ya 👇');
+  });
+});
+
+describe('renderMorningGlanceBlock', () => {
+  const morningPayload = (data: Record<string, unknown>): ProactivePayload => ({
+    triggerType: 'morning_glance',
+    dedupKey: 'morning-glance:2026-06-22',
+    channel: 'llm',
+    data,
+  });
+
+  it('assembles saldo → budget → upcoming → todayDue, sections joined by blank lines', () => {
+    const out = renderMorningGlanceBlock(morningPayload({
+      balances: [{ name: 'BCA', balance: 1_000_000 }],
+      budgets: [{ name: 'Makan', spent: 50, alloc: 100, remaining: 50, pct: 0.5 }],
+      upcoming: [{ name: 'Spotify', amount: 1, account: 'x', dueDate: '2026-06-25' }],
+      todayDueBills: [{ name: 'Netflix', amount: 2, account: 'y' }],
+    }));
+    expect(out.indexOf('🏦 Saldo')).toBeLessThan(out.indexOf('📊 Budget'));
+    expect(out.indexOf('📊 Budget')).toBeLessThan(out.indexOf('📅 Tagihan minggu ini'));
+    expect(out.indexOf('📅 Tagihan minggu ini')).toBeLessThan(out.indexOf('Jatuh tempo hari ini'));
+    expect(out).toContain('\n\n'); // blank-line separators
+  });
+
+  it('omits empty sections', () => {
+    const out = renderMorningGlanceBlock(morningPayload({
+      balances: [{ name: 'BCA', balance: 1_000_000 }],
+      budgets: [],
+      upcoming: [],
+      todayDueBills: [],
+    }));
+    expect(out).toBe('🏦 Saldo\n• BCA 1.000.000');
+  });
+
+  it('returns empty string when every section is empty', () => {
+    expect(renderMorningGlanceBlock(morningPayload({
+      balances: [], budgets: [], upcoming: [], todayDueBills: [],
+    }))).toBe('');
   });
 });
