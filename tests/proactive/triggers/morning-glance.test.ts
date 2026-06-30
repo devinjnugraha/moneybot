@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { detectMorningGlance } from '../../../src/proactive/triggers/morning-glance.js';
 import type { Repos } from '../../../src/repositories/interfaces.js';
-import type { Account, RecurringPayment, Transaction } from '../../../src/domain/entities.js';
+import type { Account, BudgetCode, RecurringPayment, Transaction } from '../../../src/domain/entities.js';
 
 // 2026-06-22T14:00:00Z == 21:00 WIB → WIB today = 2026-06-22.
 const NOW = new Date('2026-06-22T14:00:00Z');
@@ -15,8 +15,11 @@ function mkRecurring(over: Partial<RecurringPayment>): RecurringPayment {
 function mkTxn(over: Partial<Transaction>): Transaction {
   return { transactionId: 't', userId: 'u', type: 'expense', amount: 0, description: '', accountId: 'a', date: '2026-06-21', isRecurringInstance: false, createdAt: '', updatedAt: '', ...over };
 }
+function mkBudget(over: Partial<BudgetCode>): BudgetCode {
+  return { budgetCodeId: 'b', userId: 'u', name: '', monthlyBudget: 0, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '', ...over };
+}
 
-function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]; yesterday?: Transaction[] } = {}): Repos {
+function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]; yesterday?: Transaction[]; budgets?: BudgetCode[] } = {}): Repos {
   return {
     users: { findByTelegramChatId: vi.fn(), findById: vi.fn(), findAll: vi.fn(), create: vi.fn(), update: vi.fn() } as never,
     accounts: { findAllByUserId: vi.fn(async () => opts.accounts ?? []), findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), updateBalance: vi.fn(), update: vi.fn() } as never,
@@ -26,7 +29,7 @@ function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]
       findByAccountAndDateRange: vi.fn(), findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn(),
     } as never,
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
-    budgets: { findByUserAndMonth: vi.fn(), findByName: vi.fn(), create: vi.fn(), incrementSpent: vi.fn(), update: vi.fn() } as never,
+    budgets: { findByUserAndMonth: vi.fn(async () => opts.budgets ?? []), findByName: vi.fn(), create: vi.fn(), incrementSpent: vi.fn(), update: vi.fn() } as never,
     recurrings: { findAllByUserId: vi.fn(async () => opts.recurrings ?? []), findByDayOfMonth: vi.fn(), findDueToday: vi.fn(), findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), update: vi.fn(), deactivate: vi.fn() } as never,
     preferences: { findAllByUserId: vi.fn(), upsert: vi.fn(), delete: vi.fn() } as never,
     outreach: { record: vi.fn(), existsKey: vi.fn(), countSince: vi.fn() } as never,
@@ -103,5 +106,21 @@ describe('detectMorningGlance', () => {
     const reposEmpty = mockRepos({ accounts: [mkAccount({ accountId: 'bca' })], yesterday: [] });
     const empty = await detectMorningGlance({ userId: 'u', repos: reposEmpty, now: NOW });
     expect((empty[0]!.data as { yesterday: unknown }).yesterday).toBeNull();
+  });
+
+  it('adds month budgets sorted by pct desc with remaining, excluding zero-alloc codes', async () => {
+    const repos = mockRepos({
+      accounts: [mkAccount({ accountId: 'bca' })],
+      budgets: [
+        mkBudget({ budgetCodeId: 'b1', name: 'Makan', monthlyBudget: 600_000, spent: 450_000 }),
+        mkBudget({ budgetCodeId: 'b2', name: 'Transport', monthlyBudget: 400_000, spent: 120_000 }),
+        mkBudget({ budgetCodeId: 'b3', name: 'Hiburan', monthlyBudget: 0, spent: 0 }),
+      ],
+    });
+    const out = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = out[0]!.data as { budgets: { name: string; pct: number; remaining: number; alloc: number; spent: number }[] };
+    expect(data.budgets.map((b) => b.name)).toEqual(['Makan', 'Transport']); // 75% before 30%
+    expect(data.budgets[0]).toMatchObject({ spent: 450_000, alloc: 600_000, remaining: 150_000, pct: 0.75 });
+    expect(data.budgets.map((b) => b.name)).not.toContain('Hiburan'); // monthlyBudget 0 filtered
   });
 });

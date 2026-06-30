@@ -54,11 +54,28 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
     ? { count: yExp.length, totalSpend: yExp.reduce((s, t) => s + t.amount, 0) }
     : null;
 
+  // Current-month budgets: spent vs remaining + pct, sorted most-used first.
+  // Zero-alloc codes carry no meaningful fraction, so they are filtered out.
+  const budgets = (await repos.budgets.findByUserAndMonth(userId, year, month))
+    .filter((c) => c.monthlyBudget > 0)
+    .map((c) => {
+      const alloc = c.monthlyBudget;
+      const spent = c.spent;
+      return {
+        name: c.name,
+        spent,
+        alloc,
+        remaining: alloc - spent,
+        pct: alloc > 0 ? spent / alloc : 0,
+      };
+    })
+    .sort((a, b) => b.pct - a.pct);
+
   const payload: ProactivePayload = {
     triggerType: 'morning_glance',
     dedupKey: `morning-glance:${today}`,
     channel: 'llm',
-    data: { balances, upcoming, yesterday, todayDueBills },
+    data: { balances, upcoming, yesterday, todayDueBills, budgets },
   };
   return [payload];
 };
