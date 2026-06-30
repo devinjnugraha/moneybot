@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -198,5 +198,44 @@ describe('renderAccountList', () => {
 
   it('returns empty string when there are no accounts', () => {
     expect(renderAccountList([])).toBe('');
+  });
+});
+
+describe('renderBudgetBlock', () => {
+  it('renders each code as spent/alloc · remaining · pct + bar', () => {
+    const out = renderBudgetBlock([
+      { name: 'Makan', spent: 450_000, alloc: 600_000, remaining: 150_000, pct: 0.75 },
+    ]);
+    expect(out).toContain('📊 Budget');
+    expect(out).toContain('Makan 450.000/600.000 · sisa 150.000 · 75%');
+    expect(out).toContain('`|————————•——|`'); // 75% bar
+  });
+
+  it('flags over-budget codes with 🚨 and the real pct, clamping the bar', () => {
+    const out = renderBudgetBlock([
+      { name: 'Makan', spent: 720_000, alloc: 600_000, remaining: -120_000, pct: 1.2 },
+    ]);
+    expect(out).toContain('🚨 Makan');
+    expect(out).toContain('120%');
+    expect(out).toContain('`|——————————•|`'); // clamped full
+  });
+
+  it('caps at 3 codes (sorted by pct desc upstream) and notes the rest', () => {
+    const codes = [
+      { name: 'A', spent: 90, alloc: 100, remaining: 10, pct: 0.9 },
+      { name: 'B', spent: 50, alloc: 100, remaining: 50, pct: 0.5 },
+      { name: 'C', spent: 30, alloc: 100, remaining: 70, pct: 0.3 },
+      { name: 'D', spent: 10, alloc: 100, remaining: 90, pct: 0.1 },
+    ];
+    const out = renderBudgetBlock(codes);
+    expect(out).toContain('A');
+    expect(out).toContain('B');
+    expect(out).toContain('C');
+    expect(out).not.toContain('D 10'); // D omitted from lines
+    expect(out).toContain('+1 lainnya');
+  });
+
+  it('returns empty string when there are no budgets', () => {
+    expect(renderBudgetBlock([])).toBe('');
   });
 });

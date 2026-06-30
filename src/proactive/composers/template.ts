@@ -29,6 +29,28 @@ export function renderAccountList(balances: readonly MGAccount[]): string {
   return `🏦 Saldo\n${lines.join('\n')}`;
 }
 
+interface MGBudget {
+  name: string;
+  spent: number;
+  alloc: number;
+  remaining: number;
+  pct: number; // fraction 0..N (may exceed 1)
+}
+const BUDGET_CAP = 3;
+
+/** Render per-code budget lines (spent/alloc · remaining · pct + bar), capped. */
+export function renderBudgetBlock(budgets: readonly MGBudget[]): string {
+  if (budgets.length === 0) return '';
+  const shown = budgets.slice(0, BUDGET_CAP);
+  const lines = shown.map((b) => {
+    const pct = Math.round(b.pct * 100);
+    const prefix = b.pct > 1 ? '🚨 ' : '';
+    return `${prefix}${b.name} ${idr(b.spent)}/${idr(b.alloc)} · sisa ${idr(b.remaining)} · ${pct}% ${renderBudgetBar(b.pct)}`;
+  });
+  if (budgets.length > BUDGET_CAP) lines.push(`+${budgets.length - BUDGET_CAP} lainnya`);
+  return `📊 Budget\n${lines.join('\n')}`;
+}
+
 interface SummaryCategory {
   id: string;
   name: string;
