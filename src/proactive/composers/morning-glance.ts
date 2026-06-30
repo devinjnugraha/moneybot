@@ -3,30 +3,41 @@ import type { LanguageModel } from 'ai';
 import { buildMorningGlanceSystemPrompt } from '../prompt.js';
 import { todayWibDisplay } from '../../domain/time.js';
 import { dueBillsKeyboard } from '../../telegram/formatter.js';
-import { morningGlanceTemplate } from './template.js';
+import { morningGlanceTemplate, renderMorningGlanceBlock, MORNING_GLANCE_DUE_CTA } from './template.js';
 import { logEvent } from '../../utils/logger.js';
 import type { Composer, ComposerOutput } from '../types.js';
 
-/** Compose the morning glance: LLM text + a programmatic due-bills keyboard. */
+/** Compose the morning glance: LLM prose (greeting + yesterday) + deterministic block + CTA. */
 export function createMorningGlanceComposer(model: LanguageModel): Composer {
   return async (payload, ctx) => {
-    const bills = (payload.data as { todayDueBills?: { recurringId: string; name: string }[] }).todayDueBills ?? [];
-    const replyMarkup = dueBillsKeyboard(bills);
+    const data = payload.data as {
+      yesterday?: { count: number; totalSpend: number } | null;
+      todayDueBills?: { recurringId: string; name: string }[];
+    };
+    const dueBills = data.todayDueBills ?? [];
+    const replyMarkup = dueBillsKeyboard(dueBills);
 
-    let text: string;
+    let prose: string;
     try {
       const { text: out } = await generateText({
         model,
         system: buildMorningGlanceSystemPrompt(todayWibDisplay(ctx.now)),
-        prompt: `Tulis pesan pagi (morning glance) untuk data berikut:\n\n${JSON.stringify(payload.data, null, 2)}`,
+        // Only yesterday is prose-owned; saldo/budget/tagihan are rendered by the system.
+        prompt: `Kemarin (WIB):\n${JSON.stringify(data.yesterday ?? null)}`,
       });
-      text = out;
+      prose = out.trim();
     } catch (err) {
       logEvent('warn', 'morning glance llm failed; falling back to template', { error: (err as Error).message });
-      text = morningGlanceTemplate(payload);
+      const fallback: ComposerOutput = { text: morningGlanceTemplate(payload) };
+      if (replyMarkup) fallback.replyMarkup = replyMarkup;
+      return fallback;
     }
 
-    const result: ComposerOutput = { text };
+    const block = renderMorningGlanceBlock(payload);
+    const parts = [prose, block].filter(Boolean);
+    if (dueBills.length > 0) parts.push(MORNING_GLANCE_DUE_CTA);
+
+    const result: ComposerOutput = { text: parts.join('\n\n') };
     if (replyMarkup) result.replyMarkup = replyMarkup;
     return result;
   };
