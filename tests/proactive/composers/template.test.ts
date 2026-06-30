@@ -157,6 +157,41 @@ describe('morningGlanceTemplate', () => {
     }));
     expect(out).toContain('belum ada catatan');
   });
+
+  it('renders balances as bullets and a budget bar, with the CTA when bills are due', () => {
+    const out = morningGlanceTemplate({
+      triggerType: 'morning_glance',
+      dedupKey: 'morning-glance:2026-06-22',
+      channel: 'llm',
+      data: {
+        balances: [{ name: 'BCA', balance: 5_200_000 }],
+        budgets: [{ name: 'Makan', spent: 450_000, alloc: 600_000, remaining: 150_000, pct: 0.75 }],
+        upcoming: [],
+        yesterday: { count: 2, totalSpend: 85_000 },
+        todayDueBills: [{ recurringId: 'r1', name: 'Netflix', amount: 75_000, account: 'BCA CC' }],
+      },
+    });
+    // balances are bulleted (no single-line " · "-join)
+    expect(out).toContain('🏦 Saldo\n• BCA 5.200.000');
+    expect(out).not.toContain('· BCA');
+    // budget bar present and backtick-wrapped
+    expect(out).toContain('`|————————•——|`');
+    // yesterday line
+    expect(out).toContain('2 catatan');
+    // CTA last, pointing at the keyboard
+    expect(out.endsWith('Tagihan hari ini tinggal dipencet di bawah ya 👇')).toBe(true);
+  });
+
+  it('omits the CTA when there are no due bills', () => {
+    const out = morningGlanceTemplate({
+      triggerType: 'morning_glance',
+      dedupKey: 'morning-glance:2026-06-22',
+      channel: 'llm',
+      data: { balances: [], budgets: [], upcoming: [], yesterday: null, todayDueBills: [] },
+    });
+    expect(out).not.toContain('dipencet');
+    expect(out).toContain('belum ada catatan');
+  });
 });
 
 describe('renderBudgetBar', () => {
