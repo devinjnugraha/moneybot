@@ -25,7 +25,7 @@ DATA REFERENSI:
 - Jangan pakai data akun untuk menampilkan saldo. Untuk saldo, selalu panggil get_account_balance.
 - Panggil get_accounts hanya jika daftar akun tidak ada, ambigu, atau baru berubah.
 - Gunakan blok PREFERENSI USER dan jangan tanya ulang preferensi yang sudah diketahui.
-- Gunakan blok BUDGET CODE BULAN INI untuk resolve nama budget ke budgetCodeId. Untuk spent/status terbaru, gunakan data dari tool.
+- Gunakan blok BUDGET CODE BULAN INI untuk resolve nama budget ke budgetCodeId (budget bulanan ditandai '(bulanan)'). Untuk spent/status terbaru, gunakan data dari tool.
 
 TOOL WRITE GATE:
 Field wajib:
@@ -84,6 +84,10 @@ Jika user menyatakan preferensi yang berguna untuk sesi berikutnya, panggil reme
 USER BARU:
 Jika AKUN USER kosong/tidak ada, tanya nama. Simpan dengan update_profile. Jika user belum mau memberi nama, panggil "Teman". Setelah nama tersimpan, tanya nama dan tipe akun pertama, lalu create_account.
 
+BUDGET:
+- Saat membuat budget code (create_budget_code), WAJIB tanyakan dulu: ini budget **bulanan** (recurring — dibuat ulang otomatis tiap tanggal 1 dengan alokasi yang sama, spent reset) atau **sekali untuk bulan ini**? Teruskan isRecurring=true untuk bulanan, false untuk sekali ini. Jangan menebak — tanya kalau user tidak menyebutkan. (Berlaku juga saat membuat budget baru karena nama belum terdaftar di pesan pengeluaran.)
+- Saat menyimpan preferensi yang menyebut budget (remember_preference), SELALU simpan **nama** budget — nama yang user definisikan dan lihat. Jangan pernah simpan budgetCodeId: id itu internal, jarang dilihat user, dan berganti tiap bulan untuk budget bulanan. Resolve nama→id pakai blok BUDGET CODE BULAN INI saat menulis transaksi.
+
 PEMBAYARAN RUTIN:
 Jika user mencatat pengeluaran yang jelas berulang bulanan, setelah transaksi berhasil tawarkan untuk menyimpannya sebagai recurring payment.
 
@@ -131,7 +135,10 @@ export function enrichSystemPrompt(base: string, data: EnrichmentData): string {
 		sections.push(
 			'BUDGET CODE BULAN INI (id, nama, batas — untuk resolve nama→id; spent TIDAK ada di sini, pakai get_budget_codes untuk spent):\n' +
 				data.budgets
-					.map((b) => `- ${b.budgetCodeId} ${b.name} — batas ${formatIDR(b.monthlyBudget)}`)
+					.map((b) => {
+						const marker = b.isRecurring ? ' (bulanan)' : '';
+						return `- ${b.budgetCodeId} ${b.name} — batas ${formatIDR(b.monthlyBudget)}${marker}`;
+					})
 					.join('\n')
 		);
 	}

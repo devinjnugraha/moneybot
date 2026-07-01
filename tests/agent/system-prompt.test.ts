@@ -127,3 +127,39 @@ describe('buildSystemPrompt — Telegram formatting (rule 13: no markdown tables
     expect(prompt).toMatch(/SATU BARIS PER ITEM/i);
   });
 });
+
+describe('buildSystemPrompt — budget auto-rolling rules', () => {
+  const prompt = buildSystemPrompt('2026-07-01');
+
+  it('tells the model to ask bulanan-vs-sekali at creation', () => {
+    expect(prompt).toMatch(/bulanan/i);
+    expect(prompt).toContain('isRecurring');
+  });
+
+  it('tells the model to store budget NAME (not budgetCodeId) in preferences', () => {
+    expect(prompt).toContain('Jangan pernah');
+    expect(prompt).toContain('budgetCodeId');
+  });
+});
+
+describe('enrichSystemPrompt — recurring marker', () => {
+  const base = 'BASE';
+  const recurring: BudgetCode = {
+    budgetCodeId: 'bc-r', userId: 'u1', name: 'Terea', monthlyBudget: 300_000,
+    month: 7, year: 2026, spent: 0, isRecurring: true, createdAt: '', updatedAt: '',
+  };
+  const oneTime: BudgetCode = {
+    budgetCodeId: 'bc-o', userId: 'u1', name: 'Trip', monthlyBudget: 1_000_000,
+    month: 7, year: 2026, spent: 0, isRecurring: false, createdAt: '', updatedAt: '',
+  };
+
+  it('marks recurring budgets with (bulanan)', () => {
+    const out = enrichSystemPrompt(base, { budgets: [recurring] });
+    expect(out).toContain('(bulanan)');
+  });
+
+  it('does not mark one-time budgets', () => {
+    const out = enrichSystemPrompt(base, { budgets: [oneTime] });
+    expect(out).not.toContain('(bulanan)');
+  });
+});
