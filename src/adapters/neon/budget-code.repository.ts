@@ -53,4 +53,25 @@ export class NeonBudgetCodeRepository implements IBudgetCodeRepository {
     );
     return mapBudgetCode(rows[0] as Record<string, unknown>);
   }
+
+  async rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number> {
+    const result = await pool.query(
+      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, spent, old_budget_id)
+       SELECT user_id, name, monthly_budget, $3, $2, true, 0, budget_code_id
+       FROM (
+         SELECT DISTINCT ON (name) name, monthly_budget, budget_code_id, user_id
+         FROM budget_codes
+         WHERE user_id = $1
+           AND is_recurring = true
+           AND (year < $2 OR (year = $2 AND month < $3))
+         ORDER BY name, year DESC, month DESC
+       ) AS src
+       WHERE NOT EXISTS (
+         SELECT 1 FROM budget_codes c
+         WHERE c.user_id = $1 AND c.name = src.name AND c.year = $2 AND c.month = $3
+       )`,
+      [userId, year, month],
+    );
+    return result.rowCount ?? 0;
+  }
 }

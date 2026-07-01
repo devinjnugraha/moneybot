@@ -116,6 +116,14 @@ export interface IBudgetCodeRepository {
   create(input: CreateBudgetCodeInput): Promise<BudgetCode>;
   incrementSpent(userId: string, budgetCodeId: string, delta: number): Promise<void>;
   update(userId: string, budgetCodeId: string, patch: Partial<BudgetCode>): Promise<BudgetCode>;
+  /**
+   * Create current-month copies of the user's recurring budgets that don't yet
+   * exist for (year, month). Copies name + the most-recent prior allocation,
+   * resets spent to 0, sets is_recurring=true, and links old_budget_id to the
+   * source row. Idempotent (no-op if the month already has the name). Returns
+   * the number of rows created.
+   */
+  rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number>;
 }
 
 export interface IRecurringPaymentRepository {
