@@ -45,6 +45,8 @@ export interface BudgetCode {
   month: number; // 1–12
   year: number;
   spent: number;
+  isRecurring: boolean; // true → rolls into each new month on the 1st
+  oldBudgetId?: string; // immediate predecessor this was rolled over from
   createdAt: string;
   updatedAt: string;
 }

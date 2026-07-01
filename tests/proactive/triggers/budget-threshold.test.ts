@@ -6,6 +6,7 @@ import type { BudgetCode } from '../../../src/domain/entities.js';
 function mkBudget(over: Partial<BudgetCode>): BudgetCode {
   return {
     budgetCodeId: 'b', userId: 'u', name: 'n', monthlyBudget: 0, spent: 0,
+    isRecurring: false,
     month: 6, year: 2026, createdAt: '', updatedAt: '',
     ...over,
   };

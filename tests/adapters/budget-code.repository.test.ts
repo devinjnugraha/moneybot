@@ -17,6 +17,9 @@ describe('NeonBudgetCodeRepository', () => {
     const found = await budgets.findByUserAndMonth(user.userId, 2026, 6);
     expect(found).toHaveLength(1);
     expect(found[0]!.name).toBe('Jajan');
+    expect(bc.isRecurring).toBe(false); // default for a manual create
+    expect(bc.oldBudgetId).toBeUndefined();
+    expect(found[0]!.isRecurring).toBe(false);
   });
 
   it('finds by name (case-insensitive) within a month/year', async () => {

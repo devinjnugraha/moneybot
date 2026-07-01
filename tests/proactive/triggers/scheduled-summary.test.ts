@@ -80,7 +80,7 @@ describe('detectScheduledSummary', () => {
       txns: [mkTxn({ type: 'expense', amount: 10000, categoryId: 'food.dining' })],
       budgets: [{
         budgetCodeId: 'b1', userId: 'u', name: 'food', monthlyBudget: 100000, spent: 80000,
-        month: 6, year: 2026, createdAt: '', updatedAt: '',
+        isRecurring: false, month: 6, year: 2026, createdAt: '', updatedAt: '',
       }],
     });
     const out = await detectScheduledSummary({ userId: 'u', repos, now: NOW });

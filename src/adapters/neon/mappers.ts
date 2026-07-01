@@ -87,6 +87,8 @@ export function mapBudgetCode(r: Row): BudgetCode {
     month: num(r, 'month'),
     year: num(r, 'year'),
     spent: num(r, 'spent'),
+    isRecurring: bool(r, 'is_recurring'),
+    oldBudgetId: maybeStr(r, 'old_budget_id'),
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
   };

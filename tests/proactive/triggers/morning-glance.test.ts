@@ -16,7 +16,7 @@ function mkTxn(over: Partial<Transaction>): Transaction {
   return { transactionId: 't', userId: 'u', type: 'expense', amount: 0, description: '', accountId: 'a', date: '2026-06-21', isRecurringInstance: false, createdAt: '', updatedAt: '', ...over };
 }
 function mkBudget(over: Partial<BudgetCode>): BudgetCode {
-  return { budgetCodeId: 'b', userId: 'u', name: '', monthlyBudget: 0, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '', ...over };
+  return { budgetCodeId: 'b', userId: 'u', name: '', monthlyBudget: 0, month: 6, year: 2026, spent: 0, isRecurring: false, createdAt: '', updatedAt: '', ...over };
 }
 
 function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]; yesterday?: Transaction[]; budgets?: BudgetCode[] } = {}): Repos {

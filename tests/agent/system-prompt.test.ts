@@ -46,7 +46,7 @@ describe('enrichSystemPrompt', () => {
   };
   const budget: BudgetCode = {
     budgetCodeId: 'bc-1', userId: 'u1', name: 'Raissa', monthlyBudget: 800000,
-    month: 6, year: 2026, spent: 999999, createdAt: '', updatedAt: '',
+    month: 6, year: 2026, spent: 999999, isRecurring: false, createdAt: '', updatedAt: '',
   };
 
   it('appends a PREFERENSI block when preferences are present', () => {
