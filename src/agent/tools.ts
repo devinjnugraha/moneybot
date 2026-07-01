@@ -705,19 +705,23 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
   });
 
   tools.create_budget_code = tool({
-    description: 'Buat budget code baru dengan alokasi bulanan. Default month/year dari WIB.',
+    description:
+      'Buat budget code baru dengan alokasi bulanan. Default month/year dari WIB. ' +
+      'isRecurring=true → budget bulanan: dibuat ulang otomatis tiap tanggal 1 dengan alokasi sama (spent reset).',
     parameters: z.object({
       name: z.string(),
       monthlyBudget: z.number().positive(),
+      isRecurring: z.boolean().describe('true = budget bulanan (recurring tiap tanggal 1); false = sekali untuk bulan ini.'),
       month: z.number().int().min(1).max(12).optional(),
       year: z.number().int().positive().optional(),
     }),
-    execute: async ({ name, monthlyBudget, month, year }) => {
+    execute: async ({ name, monthlyBudget, isRecurring, month, year }) => {
       try {
         const bc = await repos.budgets.create({
           userId,
           name,
           monthlyBudget,
+          isRecurring,
           month: month ?? wibMonth(),
           year: year ?? wibYear(),
         });

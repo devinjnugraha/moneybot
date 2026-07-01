@@ -672,23 +672,23 @@ describe('buildTools — soft_delete_transaction (T11)', () => {
 });
 
 describe('buildTools — create_budget_code (T05)', () => {
-  it('creates a budget code with defaults for month/year', async () => {
+  it('creates a budget code with defaults for month/year and forwards isRecurring', async () => {
     const repos = mockRepos({
       budgets: {
         findByUserAndMonth: vi.fn(),
         findByName: vi.fn(),
-        create: vi.fn(async (i: { name: string; monthlyBudget: number }) => ({
+        create: vi.fn(async (i: { name: string; monthlyBudget: number; isRecurring?: boolean }) => ({
           budgetCodeId: 'b-new', userId: 'u1', name: i.name, monthlyBudget: i.monthlyBudget,
-          month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '',
+          month: 6, year: 2026, spent: 0, isRecurring: i.isRecurring ?? false, createdAt: '', updatedAt: '',
         })),
         incrementSpent: vi.fn(),
         update: vi.fn(),
       } as never,
     });
     const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
-    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000 });
+    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000, isRecurring: true });
     expect(res.status).toBe('ok');
-    expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jajan', monthlyBudget: 500_000 }));
+    expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jajan', monthlyBudget: 500_000, isRecurring: true }));
   });
 });
 
@@ -1097,7 +1097,7 @@ describe('buildTools — error messages are Bahasa Indonesia (NFR-09)', () => {
       } as never,
     });
     const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
-    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000 });
+    const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000, isRecurring: false });
     expect(res).toEqual({ status: 'error', message: 'Gagal membuat budget code. Coba lagi.' });
   });
 
