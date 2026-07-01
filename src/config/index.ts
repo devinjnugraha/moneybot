@@ -13,6 +13,7 @@ const schema = z.object({
   CONTEXT_WINDOW_TURNS: z.coerce.number().int().positive().default(20),
   SESSION_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(30),
   PROACTIVE_MORNING_GLANCE_CRON: z.string().default('0 8 * * *'),
+  BUDGET_ROLLOVER_CRON: z.string().default('5 0 * * *'),
   PROACTIVE_INSIGHT_ENABLED: z.string().default('true').transform((v) => v === 'true'),
   PROACTIVE_ENABLED: z.string().default('true').transform((v) => v === 'true'),
   PROACTIVE_SUMMARY_CRON: z.string().default('0 21 * * *'),

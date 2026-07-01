@@ -4,6 +4,7 @@ import type { InlineKeyboardMarkup } from '@grammyjs/types';
 import { detectMorningGlance } from '../proactive/triggers/morning-glance.js';
 import { createMorningGlanceComposer } from '../proactive/composers/morning-glance.js';
 import { sweepDeferredPayments } from './defer-sweep.js';
+import { sweepBudgetRollover } from './budget-rollover.js';
 import { runProactivePass } from '../proactive/dispatcher.js';
 import { createComposer } from '../proactive/composers/resolve.js';
 import { detectScheduledSummary } from '../proactive/triggers/scheduled-summary.js';
@@ -27,6 +28,14 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
       composer: createMorningGlanceComposer(model),
       repos, policy, now: new Date(), send,
     }).catch((err) => logEvent('error', 'morning glance error', { error: (err as Error).message }));
+  }, { timezone: 'Asia/Jakarta' });
+
+  // Daily 00:05 WIB — roll recurring budgets into the new month (idempotent;
+  // also reconciled once on boot). Self-heals after downtime.
+  cron.schedule(config.BUDGET_ROLLOVER_CRON, () => {
+    sweepBudgetRollover(repos).catch((err) =>
+      logEvent('error', 'budget rollover cron error', { error: (err as Error).message }),
+    );
   }, { timezone: 'Asia/Jakarta' });
 
   // Every 5 minutes — sweep deferred payments
@@ -84,6 +93,6 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
   }, { timezone: 'Asia/Jakarta' });
 
   logEvent('info', 'cron jobs registered', {
-    schedules: ['*/5 * * * *', config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
+    schedules: ['*/5 * * * *', config.BUDGET_ROLLOVER_CRON, config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
   });
 }
