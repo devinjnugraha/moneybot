@@ -55,6 +55,20 @@ describe('NeonBudgetCodeRepository', () => {
     expect(aJuly).toHaveLength(1);
   });
 
+  it('persists isRecurring on create (defaults false when omitted)', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const recurring = await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: 6, year: 2026, isRecurring: true,
+    });
+    expect(recurring.isRecurring).toBe(true);
+
+    const oneTime = await budgets.create({
+      userId: user.userId, name: 'Trip', monthlyBudget: 1_000_000, month: 6, year: 2026,
+    });
+    expect(oneTime.isRecurring).toBe(false);
+  });
+
   it('updates a budget code field', async () => {
     const user = await seedUser();
     const budgets = new NeonBudgetCodeRepository();

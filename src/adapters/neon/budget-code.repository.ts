@@ -23,10 +23,11 @@ export class NeonBudgetCodeRepository implements IBudgetCodeRepository {
 
   async create(input: CreateBudgetCodeInput): Promise<BudgetCode> {
     const { rows } = await pool.query(
-      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, old_budget_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [input.userId, input.name, input.monthlyBudget, input.month, input.year],
+      [input.userId, input.name, input.monthlyBudget, input.month, input.year,
+       input.isRecurring ?? false, input.oldBudgetId ?? null],
     );
     return mapBudgetCode(rows[0] as Record<string, unknown>);
   }

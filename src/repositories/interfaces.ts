@@ -50,6 +50,8 @@ export interface CreateBudgetCodeInput {
   monthlyBudget: number;
   month: number;
   year: number;
+  isRecurring?: boolean; // default false; only roll-over sets oldBudgetId
+  oldBudgetId?: string;
 }
 
 export interface CreateRecurringPaymentInput {
