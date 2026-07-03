@@ -65,3 +65,18 @@ export const CATEGORIES: ReadonlyArray<
   { categoryId: 'income.bonus', name: 'Bonus', nameEn: 'Bonus', icon: '🎯', type: 'income' },
   { categoryId: 'income.other', name: 'Pendapatan Lain', nameEn: 'Other Income', icon: '💵', type: 'income' },
 ];
+
+/** Every seeded categoryId (SRS §10). Single source of truth for FK guards. */
+const CATEGORY_IDS: ReadonlySet<string> = new Set(CATEGORIES.map((c) => c.categoryId));
+
+/** True iff `id` is an exact, seeded categoryId. Write tools use this to reject
+ *  LLM-supplied ids that drift from the taxonomy (e.g. an icon-prefixed
+ *  "🍜 food.dining") before they hit the transactions_category_id_fkey. */
+export function isValidCategoryId(id: string): boolean {
+  return CATEGORY_IDS.has(id);
+}
+
+/** Lean {categoryId, name} list for `missing_fields` options, so a rejected
+ *  write tells the model exactly which ids are valid. */
+export const CATEGORY_OPTIONS: ReadonlyArray<{ categoryId: string; name: string }> =
+  CATEGORIES.map((c) => ({ categoryId: c.categoryId, name: c.name }));

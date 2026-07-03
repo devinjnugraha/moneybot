@@ -29,10 +29,14 @@ describe('buildSystemPrompt — standardized transaction confirmation (rule 12)'
     expect(prompt).toContain('550e8400');
   });
 
-  it('renders category icons in the taxonomy (icon not stripped)', () => {
-    // Each category's icon must appear immediately before its categoryId.
-    expect(prompt).toContain('💰 income.salary');
-    expect(prompt).toContain('💳 transport.flazz');
+  it('renders the taxonomy id-first so the model copies a clean categoryId (icon kept, after the id)', () => {
+    // Icon prefixing the id made the LLM emit "🍜 food.dining" as the categoryId,
+    // causing prod FK violations on every expense. The id must lead the line
+    // (like accounts/budgets); the icon stays for display, repositioned after.
+    expect(prompt).toContain('- food.dining 🍜');
+    expect(prompt).toContain('- income.salary 💰');
+    expect(prompt).not.toContain('🍜 food.dining');
+    expect(prompt).not.toContain('💰 income.salary');
   });
 });
 

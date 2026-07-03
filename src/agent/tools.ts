@@ -2,7 +2,7 @@ import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
 import type { AccountResult, TransactionResult, Transaction, User, InsightContext } from '../domain/entities.js';
-import { CATEGORIES } from '../domain/categories.js';
+import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday } from '../domain/time.js';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
@@ -111,6 +111,13 @@ export async function computeInsightContext(args: {
     ctx.budgetRemaining = args.budget.limit - args.budget.spent;
   }
   return ctx;
+}
+
+/** Reject an LLM-supplied categoryId that isn't in the seeded taxonomy, with the
+ *  valid options so the model can self-correct. Guards the FK-constrained
+ *  category_id column (transactions + recurring_payments). See isValidCategoryId. */
+function invalidCategoryId(): TransactionResult {
+  return { status: 'missing_fields', missing: ['categoryId'], options: { categories: CATEGORY_OPTIONS } };
 }
 
 /** Best-effort enrichment: compute insightContext when enabled; never fail the write. */
@@ -458,6 +465,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     description: 'Catat pengeluaran. Resolve accountId via get_accounts bila ragu.',
     parameters: expenseSchema,
     execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
+      if (!isValidCategoryId(categoryId)) return invalidCategoryId();
       // Resolve account: accept accountId or account name
       let account = await repos.accounts.findById(userId, accountId);
       if (!account) account = await repos.accounts.findByName(userId, accountId);
@@ -499,6 +507,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     }),
     execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
       try {
+        if (!isValidCategoryId(categoryId)) return invalidCategoryId();
         let account = await repos.accounts.findById(userId, accountId);
         if (!account) account = await repos.accounts.findByName(userId, accountId);
         if (!account) {
@@ -617,6 +626,9 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         const transactionId = a.transactionId ?? lastTransactionId;
         if (!transactionId) {
           return { status: 'missing_fields', missing: ['transactionId'] } as TransactionResult;
+        }
+        if (a.categoryId !== undefined && !isValidCategoryId(a.categoryId)) {
+          return invalidCategoryId();
         }
 
         // Fetch the current record (findById filters deleted_at IS NULL, so a
@@ -745,6 +757,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     }),
     execute: async ({ name, amount, accountId, categoryId, dayOfMonth, budgetCodeId }) => {
       try {
+        if (!isValidCategoryId(categoryId)) return invalidCategoryId();
         let account = await repos.accounts.findById(userId, accountId);
         if (!account) account = await repos.accounts.findByName(userId, accountId);
         if (!account) {

@@ -232,6 +232,33 @@ describe('buildTools — create_expense (write gate)', () => {
     expect(res.missing).toContain('budgetCodeId');
     expect(res.options).toEqual({ monthlyBudget: null });
   });
+
+  it('returns missing_fields (no write) when categoryId is not a seeded id', async () => {
+    // Reproduces prod bug: the LLM emitted the icon-prefixed "🍜 food.dining"
+    // as categoryId, which then failed the transactions_category_id_fkey.
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'CIMB', type: 'bank' as const, balance: 100_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, {
+      description: 'Makan sate', amount: 112_500, accountId: 'a1', categoryId: '🍜 food.dining',
+    });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('categoryId');
+    expect(res.options?.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ categoryId: 'food.dining' })]),
+    );
+    expect(repos.transactions.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('buildTools — get_categories (T03)', () => {
@@ -400,6 +427,28 @@ describe('buildTools — create_income (T07)', () => {
     });
     expect(res.status).toBe('ambiguous');
     expect(res.field).toBe('accountId');
+  });
+
+  it('returns missing_fields (no write) when categoryId is not a seeded id', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async (_u: string, id: string) =>
+          id === 'a1' ? { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 50_000, isActive: true, createdAt: '', updatedAt: '' } : null,
+        ),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, {
+      description: 'Gaji', amount: 5_000_000, accountId: 'a1', categoryId: '💰 income.salary',
+    });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('categoryId');
+    expect(repos.transactions.create).not.toHaveBeenCalled();
   });
 });
 
@@ -606,6 +655,26 @@ describe('buildTools — update_transaction (T10)', () => {
     expect(repos.budgets.incrementSpent).not.toHaveBeenCalled();
     expect(repos.transactions.update).toHaveBeenCalledWith('u1', 't1', { description: 'mie ayam', categoryId: 'food.dining' });
   });
+
+  it('returns missing_fields (no write) when updating to a non-seeded categoryId', async () => {
+    const repos = mockRepos({
+      transactions: {
+        create: vi.fn(),
+        createTransfer: vi.fn(),
+        findById: vi.fn(async () => ({
+          transactionId: 't1', userId: 'u1', type: 'expense' as const, amount: 20_000,
+          description: 'bakso', categoryId: 'food.dining', accountId: 'a1',
+          isRecurringInstance: false, date: '', createdAt: '', updatedAt: '', deletedAt: undefined,
+        })),
+        update: vi.fn(async () => ({}) as never),
+      } as never,
+    });
+    const { update_transaction } = buildTools({ userId: 'u1', repos, hasAccount: true, lastTransactionId: 't1' });
+    const res = await callExec(update_transaction, { categoryId: '🍜 food.dining' });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('categoryId');
+    expect(repos.transactions.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('buildTools — soft_delete_transaction (T11)', () => {
@@ -722,6 +791,35 @@ describe('buildTools — create_recurring_payment (T12)', () => {
       name: 'Netflix', amount: 159_000, accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 15,
     });
     expect(res.status).toBe('ok');
+  });
+
+  it('returns missing_fields (no write) when categoryId is not a seeded id', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(),
+        findById: vi.fn(async () => ({ accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 0, isActive: true, createdAt: '', updatedAt: '' })),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(),
+      } as never,
+      recurrings: {
+        findAllByUserId: vi.fn(),
+        findByDayOfMonth: vi.fn(),
+        findById: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        deactivate: vi.fn(),
+      } as never,
+    });
+    const { create_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_recurring_payment, {
+      name: 'Spotify', amount: 59_900, accountId: 'a1', categoryId: '📺 entertainment.streaming', dayOfMonth: 25,
+    });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('categoryId');
+    expect(repos.recurrings.create).not.toHaveBeenCalled();
   });
 });
 

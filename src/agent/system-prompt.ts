@@ -3,7 +3,11 @@ import { formatIDR } from '../utils/format.js';
 import type { Account, AccountType, BudgetCode, UserPreference } from '../domain/entities.js';
 
 function formatCategories(): string {
-	return CATEGORIES.map((c) => `- ${c.icon} ${c.categoryId} — ${c.name} (${c.nameEn})`).join('\n');
+	// categoryId leads the line so the model copies it verbatim. An icon prefix
+	// (e.g. "- 🍜 food.dining") bled into the id and the model emitted
+	// "🍜 food.dining" as categoryId → FK violations on every expense write.
+	// Accounts/budgets already put the id first; categories now match.
+	return CATEGORIES.map((c) => `- ${c.categoryId} ${c.icon} — ${c.name} (${c.nameEn})`).join('\n');
 }
 
 /**
