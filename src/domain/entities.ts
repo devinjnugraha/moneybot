@@ -123,6 +123,13 @@ export type TransactionResult = WriteResult<{
   budget?: { spent: number; limit: number; exceeded: boolean };
   insightContext?: InsightContext;
 }>;
+export interface PayCardBillOk {
+  transaction: Transaction;
+  card: { name: string; paidAmount: number; remainingOwed: number; availableLimit: number };
+  settledStatements: { cycleEnd: string }[];
+  nextDue?: { cycleEnd: string; dueDate: string; amount: number };
+}
+export type CardPaymentResult = WriteResult<PayCardBillOk>;
 
 /**
  * Post-write context snapshot returned on the `ok` variant of write tools so the

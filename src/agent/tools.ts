@@ -1,7 +1,7 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
-import type { AccountResult, TransactionResult, Transaction, User, InsightContext } from '../domain/entities.js';
+import type { Account, AccountResult, TransactionResult, Transaction, User, InsightContext, PayCardBillOk, CardPaymentResult } from '../domain/entities.js';
 import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday } from '../domain/time.js';
 import { config } from '../config/index.js';
@@ -67,6 +67,68 @@ export async function createExpenseCore(params: {
   } catch (e) {
     logEvent('error', 'createExpenseCore failed', { userId: params.userId, error: (e as Error).message });
     return { status: 'error', message: 'Gagal mencatat pengeluaran. Coba lagi.' } as TransactionResult;
+  }
+}
+
+/** Atomic card-bill payment: a guarded transfer (source→card) that reuses the
+ *  createTransfer txn. Paid-ness is derived (getWithFigures), so there is no
+ *  separate "mark paid" write. Never throws. */
+export async function payCardBillCore(params: {
+  userId: string;
+  card: Account;
+  fromAccount: Account;
+  amount?: number; // undefined => pay full outstanding
+  repos: Repos;
+}): Promise<CardPaymentResult> {
+  const { userId, card, fromAccount, repos } = params;
+  try {
+    if (card.type !== 'card' || card.billingDay == null) {
+      return { status: 'error', message: 'Akun tujuan bukan kartu dengan billing date.' } as CardPaymentResult;
+    }
+    if (fromAccount.accountId === card.accountId) {
+      return { status: 'error', message: 'Akun sumber dan kartu sama.' } as CardPaymentResult;
+    }
+    const totalOwed = Math.max(0, -card.balance);
+    if (totalOwed === 0) {
+      return { status: 'error', message: 'Tidak ada tagihan tertunggak.' } as CardPaymentResult;
+    }
+    const amount = params.amount ?? totalOwed;
+    if (amount > totalOwed) {
+      return {
+        status: 'error',
+        message: `Tidak bisa bayar lebih dari tagihan ${totalOwed}. Pakai create_transfer untuk memindahkan dana bebas.`,
+      } as CardPaymentResult;
+    }
+
+    const transaction = await repos.transactions.createTransfer({
+      userId,
+      amount,
+      fromAccountId: fromAccount.accountId,
+      toAccountId: card.accountId,
+      description: `Bayar tagihan ${card.name}`,
+      date: todayWIB(),
+    });
+
+    const stmts = await repos.cardStatements.getWithFigures(userId, card.accountId);
+    const settledStatements = stmts
+      .filter((s) => s.status === 'paid' && s.amountPaid > 0)
+      .map((s) => ({ cycleEnd: s.cycleEnd }));
+    const nextDueStmt = stmts.find((s) => s.remainingDue > 0);
+    const remainingOwed = Math.max(0, totalOwed - amount);
+    const availableLimit = (card.creditLimit ?? 0) + card.balance + amount;
+
+    const ok: PayCardBillOk = {
+      transaction,
+      card: { name: card.name, paidAmount: amount, remainingOwed, availableLimit },
+      settledStatements,
+      nextDue: nextDueStmt
+        ? { cycleEnd: nextDueStmt.cycleEnd, dueDate: nextDueStmt.dueDate, amount: nextDueStmt.remainingDue }
+        : undefined,
+    };
+    return { status: 'ok', data: ok };
+  } catch (e) {
+    logEvent('error', 'pay_card_bill failed', { userId, error: (e as Error).message });
+    return { status: 'error', message: 'Gagal membayar tagihan kartu. Coba lagi.' } as CardPaymentResult;
   }
 }
 
@@ -603,6 +665,43 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       } catch (e) {
         logEvent('error', 'create_transfer failed', { userId, error: (e as Error).message });
         return { status: 'error', message: 'Gagal mencatat transfer. Coba lagi.' } as TransactionResult;
+      }
+    },
+  });
+
+  tools.pay_card_bill = tool({
+    description:
+      'Bayar tagihan kartu kredit — transfer dana dari akun sumber ke kartu (atomik). ' +
+      'Default amount = lunasi semua tagihan tertunggak. Bukan create_transfer; ini khusus bayar kartu.',
+    parameters: z.object({
+      cardAccountId: z.string().describe('Kartu (nama atau accountId).'),
+      fromAccountId: z.string().describe('Akun sumber dana (nama atau accountId).'),
+      amount: z.number().positive().optional().describe('Jumlah bayar. Kosong = lunasi semua tagihan.'),
+    }),
+    execute: async ({ cardAccountId, fromAccountId, amount }) => {
+      try {
+        let cardAcc = await repos.accounts.findById(userId, cardAccountId);
+        if (!cardAcc) cardAcc = await repos.accounts.findByName(userId, cardAccountId);
+        if (!cardAcc) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          return {
+            status: 'ambiguous', field: 'cardAccountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          } as CardPaymentResult;
+        }
+        let fromAcc = await repos.accounts.findById(userId, fromAccountId);
+        if (!fromAcc) fromAcc = await repos.accounts.findByName(userId, fromAccountId);
+        if (!fromAcc) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          return {
+            status: 'ambiguous', field: 'fromAccountId',
+            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+          } as CardPaymentResult;
+        }
+        return payCardBillCore({ userId, card: cardAcc, fromAccount: fromAcc, amount, repos });
+      } catch (e) {
+        logEvent('error', 'pay_card_bill failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal membayar tagihan kartu. Coba lagi.' } as CardPaymentResult;
       }
     },
   });
