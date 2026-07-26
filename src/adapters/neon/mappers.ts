@@ -51,6 +51,8 @@ export function mapAccount(r: Row): Account {
     type: str(r, 'type') as Account['type'],
     balance: num(r, 'balance'),
     creditLimit: maybeNum(r, 'credit_limit'),
+    billingDay: maybeNum(r, 'billing_day'),
+    dueInDays: maybeNum(r, 'due_in_days') ?? 15,
     isActive: bool(r, 'is_active'),
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),

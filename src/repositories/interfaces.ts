@@ -26,6 +26,8 @@ export interface CreateAccountInput {
   name: string;
   type: AccountType;
   creditLimit?: number;
+  billingDay?: number;
+  dueInDays?: number;
   openingBalance?: number;
 }
 

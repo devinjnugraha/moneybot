@@ -23,6 +23,8 @@ export interface Account {
   type: AccountType;
   balance: number;
   creditLimit?: number;
+  billingDay?: number;  // 1–31, statement cut day; only meaningful for cards
+  dueInDays?: number;   // grace period; default 15
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

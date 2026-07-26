@@ -30,8 +30,8 @@ export class NeonAccountRepository implements IAccountRepository {
 
   async create(input: CreateAccountInput): Promise<Account> {
     const { rows } = await pool.query(
-      `INSERT INTO accounts (user_id, name, type, balance, credit_limit)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO accounts (user_id, name, type, balance, credit_limit, billing_day, due_in_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         input.userId,
@@ -39,6 +39,8 @@ export class NeonAccountRepository implements IAccountRepository {
         input.type,
         input.openingBalance ?? 0,
         input.creditLimit ?? null,
+        input.billingDay ?? null,
+        input.dueInDays ?? 15,
       ],
     );
     return mapAccount(rows[0] as Record<string, unknown>);
@@ -58,10 +60,16 @@ export class NeonAccountRepository implements IAccountRepository {
       `UPDATE accounts
        SET name = COALESCE($3, name),
            is_active = COALESCE($4, is_active),
+           billing_day = COALESCE($5, billing_day),
+           due_in_days = COALESCE($6, due_in_days),
            updated_at = NOW()
        WHERE user_id = $1 AND account_id = $2
        RETURNING *`,
-      [userId, accountId, patch.name ?? null, patch.isActive ?? null],
+      [
+        userId, accountId,
+        patch.name ?? null, patch.isActive ?? null,
+        patch.billingDay ?? null, patch.dueInDays ?? null,
+      ],
     );
     return mapAccount(rows[0] as Record<string, unknown>);
   }

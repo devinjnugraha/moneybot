@@ -7,6 +7,7 @@ export function uniqueChatId(): string {
 }
 
 const USER_TABLES = [
+  'card_statements',
   'session_contexts',
   'transactions',
   'budget_codes',

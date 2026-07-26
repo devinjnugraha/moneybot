@@ -54,4 +54,32 @@ describe('NeonAccountRepository', () => {
     const found = await accounts.findByName(user.userId, 'bca');
     expect(found?.name).toBe('BCA');
   });
+
+  it('persists billing_day and due_in_days on a card and defaults due_in_days to 15', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    const card = await accounts.create({
+      userId: user.userId, name: 'BCA CC', type: 'card',
+      creditLimit: 5_000_000, billingDay: 5,
+    });
+    expect(card.billingDay).toBe(5);
+    expect(card.dueInDays).toBe(15);
+
+    const plain = await accounts.create({
+      userId: user.userId, name: 'Cash', type: 'cash',
+    });
+    expect(plain.billingDay).toBeUndefined();
+    expect(plain.dueInDays).toBe(15);
+  });
+
+  it('update patches billing_day and due_in_days', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    const card = await accounts.create({
+      userId: user.userId, name: 'B CC', type: 'card', creditLimit: 1_000_000,
+    });
+    const updated = await accounts.update(user.userId, card.accountId, { billingDay: 20, dueInDays: 10 });
+    expect(updated.billingDay).toBe(20);
+    expect(updated.dueInDays).toBe(10);
+  });
 });
