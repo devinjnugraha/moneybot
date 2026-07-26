@@ -131,3 +131,29 @@ export function nextFireDate(dayOfMonth: number, today: Date = new Date()): stri
   const nextTargetDay = Math.min(dayOfMonth, nextDaysInMonth);
   return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(nextTargetDay).padStart(2, '0')}`;
 }
+
+/** The billing cut date for a given (year, month): day-31 → last day of month. */
+export function billingCut(billingDay: number, year: number, month: number): string {
+  const d = Math.min(billingDay, lastDayOfMonth(year, month));
+  return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** Most recent billing cut on or before `today` ('YYYY-MM-DD'). */
+export function lastBillingCutOnOrBefore(billingDay: number, today: string): string {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const thisCut = billingCut(billingDay, y, m);
+  if (thisCut <= today) return thisCut;
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  return billingCut(billingDay, py, pm);
+}
+
+/** The billing cut in the month before the given `cut` ('YYYY-MM-DD'). */
+export function previousBillingCut(billingDay: number, cut: string): string {
+  const y = Number(cut.slice(0, 4));
+  const m = Number(cut.slice(5, 7));
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  return billingCut(billingDay, py, pm);
+}
