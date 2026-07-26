@@ -211,8 +211,10 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       type: z.enum(['cash', 'bank', 'card']),
       creditLimit: z.number().positive().optional(),
       openingBalance: z.number().optional(),
+      billingDay: z.number().int().min(1).max(31).optional(),
+      dueInDays: z.number().int().min(0).optional(),
     }),
-    execute: async ({ name, type, creditLimit, openingBalance }) => {
+    execute: async ({ name, type, creditLimit, openingBalance, billingDay, dueInDays }) => {
       if (type === 'card' && (creditLimit === undefined || creditLimit <= 0)) {
         const res: AccountResult = { status: 'missing_fields', missing: ['creditLimit'] };
         return res;
@@ -224,6 +226,8 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
           type,
           creditLimit,
           openingBalance,
+          billingDay,
+          dueInDays,
         });
         const res: AccountResult = { status: 'ok', data: account };
         return res;
@@ -244,13 +248,23 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     parameters: z.object({}),
     execute: async () => {
       const accounts = await repos.accounts.findAllByUserId(userId);
-      return accounts.map((a) => ({
-        accountId: a.accountId,
-        name: a.name,
-        type: a.type,
-        balance: a.balance,
-        creditLimit: a.creditLimit,
-      }));
+      return accounts.map((a) => {
+        const base = {
+          accountId: a.accountId,
+          name: a.name,
+          type: a.type,
+          balance: a.balance,
+          creditLimit: a.creditLimit,
+        };
+        if (a.type !== 'card') return base;
+        return {
+          ...base,
+          billingDay: a.billingDay,
+          dueInDays: a.dueInDays,
+          availableLimit: (a.creditLimit ?? 0) + a.balance,
+          owed: Math.max(0, -a.balance),
+        };
+      });
     },
   });
 
@@ -350,6 +364,43 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       }
       const all = await repos.accounts.findAllByUserId(userId);
       return all.map((a) => ({ accountId: a.accountId, name: a.name, balance: a.balance }));
+    },
+  });
+
+  tools.get_card_statements = tool({
+    description:
+      'Daftar statement (tagihan) kartu dengan figurasinya: tagihan, sudah dibayar, sisa, jatuh tempo, status. ' +
+      'Bisa filter ke satu kartu. Default: sembunyikan yang sudah lunas.',
+    parameters: z.object({
+      cardAccountId: z.string().optional().describe('Kartu (nama atau accountId). Kosong = semua kartu.'),
+      includePaid: z.boolean().optional().describe('Termasuk yang sudah lunas. Default false.'),
+    }),
+    execute: async ({ cardAccountId, includePaid }) => {
+      const all = await repos.accounts.findAllByUserId(userId);
+      const cards = all.filter((a) => a.type === 'card' && a.billingDay != null);
+      const target = cardAccountId
+        ? cards.filter(
+            (c) => c.accountId === cardAccountId || c.name.toLowerCase() === cardAccountId.toLowerCase(),
+          )
+        : cards;
+      const out: Array<Record<string, unknown>> = [];
+      for (const c of target) {
+        const stmts = await repos.cardStatements.getWithFigures(userId, c.accountId);
+        for (const s of stmts) {
+          if (!includePaid && (s.status === 'paid' || s.remainingDue === 0)) continue;
+          out.push({
+            cardName: c.name,
+            cycleEnd: s.cycleEnd,
+            dueDate: s.dueDate,
+            newCharges: s.newCharges,
+            amountPaid: s.amountPaid,
+            remainingDue: s.remainingDue,
+            status: s.status,
+            overdue: s.overdue,
+          });
+        }
+      }
+      return out;
     },
   });
 
@@ -702,6 +753,36 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       } catch (e) {
         logEvent('error', 'pay_card_bill failed', { userId, error: (e as Error).message });
         return { status: 'error', message: 'Gagal membayar tagihan kartu. Coba lagi.' } as CardPaymentResult;
+      }
+    },
+  });
+
+  tools.update_account = tool({
+    description:
+      'Perbarui akun: billingDay/dueInDays (kartu), name, isActive. Minimal satu field harus diisi.',
+    parameters: z.object({
+      accountId: z.string(),
+      billingDay: z.number().int().min(1).max(31).optional(),
+      dueInDays: z.number().int().min(0).optional(),
+      name: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }),
+    execute: async ({ accountId, billingDay, dueInDays, name, isActive }) => {
+      if (billingDay === undefined && dueInDays === undefined && name === undefined && isActive === undefined) {
+        return { status: 'missing_fields', missing: ['billingDay', 'dueInDays', 'name', 'isActive'] };
+      }
+      try {
+        let acc = await repos.accounts.findById(userId, accountId);
+        if (!acc) acc = await repos.accounts.findByName(userId, accountId);
+        if (!acc) {
+          const all = await repos.accounts.findAllByUserId(userId);
+          return { status: 'ambiguous', field: 'accountId', matches: all.map((a) => ({ id: a.accountId, label: a.name })) };
+        }
+        const updated = await repos.accounts.update(userId, acc.accountId, { billingDay, dueInDays, name, isActive });
+        return { status: 'ok', data: updated };
+      } catch (e) {
+        logEvent('error', 'update_account failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal memperbarui akun. Coba lagi.' };
       }
     },
   });

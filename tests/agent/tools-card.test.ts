@@ -123,3 +123,74 @@ describe('pay_card_bill', () => {
     expect(res.field).toBe('fromAccountId');
   });
 });
+
+describe('get_card_statements', () => {
+  it('returns derived statements for cards, excluding paid by default', async () => {
+    const repos = mockRepos({
+      cardStatements: {
+        ensureEndedCycles: vi.fn(),
+        getWithFigures: vi.fn(async () => [
+          { statementId: 's1', userId: 'u', accountId: 'card1', cycleStart: '2026-06-05', cycleEnd: '2026-07-05', createdAt: '', updatedAt: '', newCharges: 300_000, amountPaid: 0, remainingDue: 300_000, status: 'open', dueDate: '2026-07-20', overdue: false },
+          { statementId: 's2', userId: 'u', accountId: 'card1', cycleStart: '2026-05-05', cycleEnd: '2026-06-05', createdAt: '', updatedAt: '', newCharges: 100_000, amountPaid: 100_000, remainingDue: 0, status: 'paid', dueDate: '2026-06-20', overdue: false },
+        ]),
+      } as never,
+    });
+    const { get_card_statements } = buildTools({ userId: 'u', repos, hasAccount: true });
+    const res = await callExec(get_card_statements, {}) as unknown as Array<{ remainingDue: number }>;
+    expect(res).toHaveLength(1);
+    expect(res[0]!.remainingDue).toBe(300_000);
+    const withPaid = await callExec(get_card_statements, { includePaid: true }) as unknown as Array<{ remainingDue: number }>;
+    expect(withPaid).toHaveLength(2);
+  });
+});
+
+describe('update_account', () => {
+  it('patches billingDay/dueInDays and returns ok', async () => {
+    const update = vi.fn(async (_u: string, _id: string, patch: Record<string, unknown>) => ({ accountId: 'card1', billingDay: patch.billingDay, dueInDays: patch.dueInDays })) as never;
+    const repos = mockRepos({
+      accounts: {
+        findById: vi.fn(async () => card()),
+        findByName: vi.fn(),
+        findAllByUserId: vi.fn(async () => []),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update,
+      } as never,
+    });
+    const { update_account } = buildTools({ userId: 'u', repos, hasAccount: true });
+    const res = await callExec(update_account, { accountId: 'card1', billingDay: 10, dueInDays: 20 });
+    expect(res.status).toBe('ok');
+    expect(update).toHaveBeenCalled();
+  });
+
+  it('returns missing_fields when no field is given', async () => {
+    const repos = mockRepos();
+    const { update_account } = buildTools({ userId: 'u', repos, hasAccount: true });
+    const res = await callExec(update_account, { accountId: 'card1' });
+    expect(res.status).toBe('missing_fields');
+  });
+});
+
+describe('get_accounts enrichment', () => {
+  it('exposes billingDay/dueInDays/availableLimit/owed for cards only', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => [card(), fund()]),
+        findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+      } as never,
+    });
+    const { get_accounts } = buildTools({ userId: 'u', repos, hasAccount: true });
+    const res = await callExec(get_accounts, {}) as unknown as Array<{
+      type: string;
+      billingDay?: number;
+      availableLimit?: number;
+      owed?: number;
+    }>;
+    const c = res.find((a) => a.type === 'card');
+    expect(c!.billingDay).toBe(5);
+    expect(c!.availableLimit).toBe(4_700_000);
+    expect(c!.owed).toBe(300_000);
+    const b = res.find((a) => a.type === 'bank');
+    expect(b!.billingDay).toBeUndefined();
+  });
+});

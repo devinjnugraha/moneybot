@@ -41,7 +41,10 @@ function mockRepos(overrides: Partial<Repos> = {}): Repos {
       update: vi.fn(),
       deactivate: vi.fn(),
     } as never,
-    cardStatements: {} as never,
+    cardStatements: {
+      ensureEndedCycles: vi.fn(),
+      getWithFigures: vi.fn(async () => []),
+    } as never,
     preferences: {
       findAllByUserId: vi.fn(async () => []),
       upsert: vi.fn(),
