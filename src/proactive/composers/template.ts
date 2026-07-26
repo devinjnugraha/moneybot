@@ -88,6 +88,24 @@ export function renderTodayDue (todayDueBills: readonly MGDue[]): string {
   return `Jatuh tempo hari ini\n${lines.join('\n')}`
 }
 
+interface MGCardDue {
+  account: string
+  cycleEnd: string
+  dueDate: string
+  remainingDue: number
+  overdue: boolean
+}
+
+/** Render due/overdue card statements as bullets. '' when empty. */
+export function renderCardBills (cards: readonly MGCardDue[]): string {
+  if (cards.length === 0) return ''
+  const lines = cards.map((c) => {
+    const late = c.overdue ? ' (terlambat)' : ''
+    return `• ${c.account} — ${idr(c.remainingDue)}, jatuh tempo ${c.dueDate}${late}`
+  })
+  return `💳 Tagihan kartu\n${lines.join('\n')}`
+}
+
 /** Fixed pointer to the inline due-bill keyboard; shared by the LLM path and fallback. */
 export const MORNING_GLANCE_DUE_CTA =
   'Tagihan hari ini tinggal dipencet di bawah ya 👇'
@@ -104,12 +122,14 @@ export function renderMorningGlanceBlock (payload: ProactivePayload): string {
     budgets?: MGBudget[]
     upcoming?: MGUpcoming[]
     todayDueBills?: MGDue[]
+    cardDue?: MGCardDue[]
   }
   return [
     renderAccountList(d.balances ?? []),
     renderBudgetBlock(d.budgets ?? []),
     renderUpcoming(d.upcoming ?? []),
-    renderTodayDue(d.todayDueBills ?? [])
+    renderTodayDue(d.todayDueBills ?? []),
+    renderCardBills(d.cardDue ?? [])
   ]
     .filter(Boolean)
     .join('\n\n')

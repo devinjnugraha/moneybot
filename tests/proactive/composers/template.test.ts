@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock, renderUpcoming, renderTodayDue, MORNING_GLANCE_DUE_CTA, renderMorningGlanceBlock } from '../../../src/proactive/composers/template.js';
+import { scheduledSummaryTemplate, budgetThresholdTemplate, loggingGapTemplate, anomalyTemplate, morningGlanceTemplate, templateCompose, renderBudgetBar, renderAccountList, renderBudgetBlock, renderUpcoming, renderTodayDue, MORNING_GLANCE_DUE_CTA, renderMorningGlanceBlock, renderCardBills } from '../../../src/proactive/composers/template.js';
 import type { ProactivePayload } from '../../../src/proactive/types.js';
 
 const summaryPayload = (data: Record<string, unknown>): ProactivePayload => ({
@@ -352,5 +352,24 @@ describe('renderMorningGlanceBlock', () => {
     expect(renderMorningGlanceBlock(morningPayload({
       balances: [], budgets: [], upcoming: [], todayDueBills: [],
     }))).toBe('');
+  });
+});
+
+describe('renderCardBills', () => {
+  it('returns "" when empty', () => {
+    expect(renderCardBills([])).toBe('');
+  });
+  it('renders one bullet per card due with overdue marker', () => {
+    const out = renderCardBills([
+      { account: 'BCA CC', cycleEnd: '2026-07-05', dueDate: '2026-07-20', remainingDue: 300_000, overdue: false },
+      { account: 'Mandiri CC', cycleEnd: '2026-07-05', dueDate: '2026-07-18', remainingDue: 150_000, overdue: true },
+    ]);
+    expect(out).toContain('💳 Tagihan kartu');
+    expect(out).toContain('BCA CC — 300.000, jatuh tempo 2026-07-20');
+    expect(out).toContain('Mandiri CC — 150.000, jatuh tempo 2026-07-18 (terlambat)');
+  });
+  it('renderMorningGlanceBlock includes the card block when cardDue is present', () => {
+    const block = renderMorningGlanceBlock({ triggerType: 'morning_glance', dedupKey: '', channel: 'llm', data: { cardDue: [{ account: 'BCA CC', cycleEnd: '', dueDate: '2026-07-20', remainingDue: 300_000, overdue: false }] } });
+    expect(block).toContain('💳 Tagihan kartu');
   });
 });

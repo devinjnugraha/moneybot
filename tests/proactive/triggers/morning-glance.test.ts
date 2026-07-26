@@ -31,7 +31,7 @@ function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
     budgets: { findByUserAndMonth: vi.fn(async () => opts.budgets ?? []), findByName: vi.fn(), create: vi.fn(), incrementSpent: vi.fn(), update: vi.fn() } as never,
     recurrings: { findAllByUserId: vi.fn(async () => opts.recurrings ?? []), findByDayOfMonth: vi.fn(), findDueToday: vi.fn(), findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), update: vi.fn(), deactivate: vi.fn() } as never,
-    cardStatements: {} as never,
+    cardStatements: { ensureEndedCycles: vi.fn(), getWithFigures: vi.fn(async () => []) } as never,
     preferences: { findAllByUserId: vi.fn(), upsert: vi.fn(), delete: vi.fn() } as never,
     outreach: { record: vi.fn(), existsKey: vi.fn(), countSince: vi.fn() } as never,
     proactiveSettings: { get: vi.fn(), setMuted: vi.fn() } as never,
@@ -123,5 +123,18 @@ describe('detectMorningGlance', () => {
     expect(data.budgets.map((b) => b.name)).toEqual(['Makan', 'Transport']); // 75% before 30%
     expect(data.budgets[0]).toMatchObject({ spent: 450_000, alloc: 600_000, remaining: 150_000, pct: 0.75 });
     expect(data.budgets.map((b) => b.name)).not.toContain('Hiburan'); // monthlyBudget 0 filtered
+  });
+
+  it('surfaces unpaid card statements due within 7 days or overdue as cardDue', async () => {
+    const due = { statementId: 's', userId: 'u', accountId: 'cc', cycleStart: '', cycleEnd: '2026-07-05', createdAt: '', updatedAt: '', newCharges: 300_000, amountPaid: 0, remainingDue: 300_000, status: 'open', dueDate: '2026-06-25', overdue: true };
+    // mkAccount doesn't model card billing fields, so use a card literal.
+    const card: Account = { accountId: 'cc', userId: 'u', name: 'BCA CC', type: 'card', balance: -300_000, creditLimit: 5_000_000, billingDay: 5, dueInDays: 15, isActive: true, createdAt: '', updatedAt: '' };
+    const repos = mockRepos({ accounts: [card] });
+    ;(repos.cardStatements as { getWithFigures: (u: string, a: string, t?: Date) => Promise<unknown[]> }).getWithFigures =
+      vi.fn(async () => [due]);
+    const out = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = out[0]!.data as { cardDue: { account: string; remainingDue: number; overdue: boolean }[] };
+    expect(data.cardDue).toHaveLength(1);
+    expect(data.cardDue[0]).toMatchObject({ account: 'BCA CC', remainingDue: 300_000, overdue: true });
   });
 });

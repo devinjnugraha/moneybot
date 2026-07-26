@@ -71,11 +71,24 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
     })
     .sort((a, b) => b.pct - a.pct);
 
+  // Card statements: unpaid, due within 7 days or overdue (FIFO-derived figures).
+  interface CardDue { account: string; cycleEnd: string; dueDate: string; remainingDue: number; overdue: boolean }
+  const cardDue: CardDue[] = [];
+  for (const a of accounts.filter((a) => a.type === 'card' && a.billingDay != null)) {
+    const stmts = await repos.cardStatements.getWithFigures(userId, a.accountId, now);
+    for (const s of stmts) {
+      if (s.remainingDue > 0 && (s.overdue || s.dueDate <= plus7)) {
+        cardDue.push({ account: a.name, cycleEnd: s.cycleEnd, dueDate: s.dueDate, remainingDue: s.remainingDue, overdue: s.overdue });
+      }
+    }
+  }
+  cardDue.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
   const payload: ProactivePayload = {
     triggerType: 'morning_glance',
     dedupKey: `morning-glance:${today}`,
     channel: 'llm',
-    data: { balances, upcoming, yesterday, todayDueBills, budgets },
+    data: { balances, upcoming, yesterday, todayDueBills, budgets, cardDue },
   };
   return [payload];
 };
