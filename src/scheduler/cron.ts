@@ -5,6 +5,7 @@ import { detectMorningGlance } from '../proactive/triggers/morning-glance.js';
 import { createMorningGlanceComposer } from '../proactive/composers/morning-glance.js';
 import { sweepDeferredPayments } from './defer-sweep.js';
 import { sweepBudgetRollover } from './budget-rollover.js';
+import { sweepCardStatements } from './card-statements.js';
 import { runProactivePass } from '../proactive/dispatcher.js';
 import { createComposer } from '../proactive/composers/resolve.js';
 import { detectScheduledSummary } from '../proactive/triggers/scheduled-summary.js';
@@ -35,6 +36,9 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
   cron.schedule(config.BUDGET_ROLLOVER_CRON, () => {
     sweepBudgetRollover(repos).catch((err) =>
       logEvent('error', 'budget rollover cron error', { error: (err as Error).message }),
+    );
+    sweepCardStatements(repos).catch((err) =>
+      logEvent('error', 'card statements cron error', { error: (err as Error).message }),
     );
   }, { timezone: 'Asia/Jakarta' });
 

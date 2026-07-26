@@ -15,6 +15,7 @@ import { todayWIB } from './domain/time.js';
 import { bot, registerMessageHandler } from './telegram/bot.js';
 import { startCronJobs } from './scheduler/cron.js';
 import { sweepBudgetRollover } from './scheduler/budget-rollover.js';
+import { sweepCardStatements } from './scheduler/card-statements.js';
 import { registerCallbackHandler } from './telegram/callback-query.js';
 import { registerNudgesCommand } from './telegram/nudges-command.js';
 import { logEvent } from './utils/logger.js';
@@ -41,6 +42,10 @@ async function main() {
   // new month immediately (node-cron does not retro-fire missed schedules).
   await sweepBudgetRollover(repos).catch((err) =>
     logEvent('error', 'boot budget rollover failed', { error: (err as Error).message }),
+  );
+
+  await sweepCardStatements(repos).catch((err) =>
+    logEvent('error', 'boot card statements failed', { error: (err as Error).message }),
   );
 
   registerNudgesCommand(repos);
