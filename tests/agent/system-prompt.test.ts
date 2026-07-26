@@ -167,3 +167,21 @@ describe('enrichSystemPrompt — recurring marker', () => {
     expect(out).not.toContain('(bulanan)');
   });
 });
+
+describe('buildSystemPrompt — card billing rules', () => {
+  const prompt = buildSystemPrompt('2026-07-26');
+
+  it('documents pay_card_bill and get_card_statements', () => {
+    expect(prompt).toContain('pay_card_bill');
+    expect(prompt).toContain('get_card_statements');
+  });
+
+  it('tells the model to ask for billingDay at card creation', () => {
+    expect(prompt).toMatch(/billingDay/i);
+  });
+
+  it('forbids create_transfer for card payments (use pay_card_bill)', () => {
+    expect(prompt).toContain('pay_card_bill');
+    expect(prompt).toContain('BUKAN create_transfer');
+  });
+});
