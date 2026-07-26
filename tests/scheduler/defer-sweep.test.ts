@@ -45,6 +45,7 @@ function mockRepos(expiredSessions: SessionContext[] = []): Repos {
       })),
       findByName: vi.fn(), create: vi.fn(), update: vi.fn(), deactivate: vi.fn(),
     } as never,
+    cardStatements: {} as never,
     preferences: {
       findAllByUserId: vi.fn(async () => []),
       upsert: vi.fn(),

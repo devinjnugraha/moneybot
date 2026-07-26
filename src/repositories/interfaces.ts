@@ -171,6 +171,23 @@ export interface IProactiveSettingsRepository {
   setMuted(userId: string, muted: boolean, resumeAt?: Date): Promise<void>;
 }
 
+export interface ICardStatementRepository {
+  /**
+   * Insert statement rows for every ended billing cycle (from the card's
+   * creation up through the most recent cut on/before `asOf`) that has no row
+   * yet. Idempotent via UNIQUE(account_id, cycle_end). Skips cycles whose
+   * cycle_end predates the card's creation. Returns the number of rows inserted.
+   */
+  ensureEndedCycles(
+    userId: string,
+    accountId: string,
+    billingDay: number,
+    cardCreatedAt: string,
+    asOf: Date,
+  ): Promise<number>;
+  // getWithFigures(...) is added to this interface in Task 4.
+}
+
 export interface Repos {
   users: IUserRepository;
   accounts: IAccountRepository;
@@ -178,6 +195,7 @@ export interface Repos {
   sessions: ISessionRepository;
   budgets: IBudgetCodeRepository;
   recurrings: IRecurringPaymentRepository;
+  cardStatements: ICardStatementRepository;
   preferences: IUserPreferenceRepository;
   outreach: IOutreachLogRepository;
   proactiveSettings: IProactiveSettingsRepository;

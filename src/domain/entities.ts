@@ -162,3 +162,29 @@ export interface ProactiveSettings {
   muted: boolean;
   resumeAt?: string; // ISO 8601; undefined => mute until explicitly turned back on
 }
+
+export type CardStatementStatus = 'open' | 'partially_paid' | 'paid';
+
+export interface CardStatement {
+  statementId: string;
+  userId: string;
+  accountId: string;
+  cycleStart: string;  // 'YYYY-MM-DD'
+  cycleEnd: string;    // the billing date (cut)
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * CardStatement + figures derived on read (never stored). Under pure FIFO,
+ * amount-due-at-cut == newCharges; payments are allocated FIFO across statements.
+ */
+export interface CardStatementWithFigures extends CardStatement {
+  newCharges: number;     // Σ expenses in (cycleStart, cycleEnd]
+  amountPaid: number;     // FIFO-allocated payments
+  remainingDue: number;   // max(0, newCharges - amountPaid)
+  status: CardStatementStatus;
+  dueDate: string;        // addDays(cycleEnd, account.dueInDays)
+  paidAt?: string;        // timestamp of the payment that settled it
+  overdue: boolean;       // dueDate < today(WIB) AND remainingDue > 0
+}

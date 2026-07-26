@@ -55,6 +55,7 @@ function mockRepos(): Repos {
       update: vi.fn(),
       deactivate: vi.fn(),
     } as never,
+    cardStatements: {} as never,
     preferences: {
       findAllByUserId: vi.fn(async () => []),
       upsert: vi.fn(),

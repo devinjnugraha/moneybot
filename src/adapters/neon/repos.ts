@@ -4,6 +4,7 @@ import { NeonTransactionRepository } from './transaction.repository.js';
 import { NeonSessionRepository } from './session.repository.js';
 import { NeonBudgetCodeRepository } from './budget-code.repository.js';
 import { NeonRecurringPaymentRepository } from './recurring-payment.repository.js';
+import { NeonCardStatementRepository } from './card-statement.repository.js';
 import { NeonUserPreferenceRepository } from './user-preference.repository.js';
 import { NeonOutreachLogRepository } from './outreach-log.repository.js';
 import { NeonProactiveSettingsRepository } from './proactive-settings.repository.js';
@@ -17,6 +18,7 @@ export function createRepos(): Repos {
     sessions: new NeonSessionRepository(),
     budgets: new NeonBudgetCodeRepository(),
     recurrings: new NeonRecurringPaymentRepository(),
+    cardStatements: new NeonCardStatementRepository(),
     preferences: new NeonUserPreferenceRepository(),
     outreach: new NeonOutreachLogRepository(),
     proactiveSettings: new NeonProactiveSettingsRepository(),

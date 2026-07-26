@@ -31,6 +31,7 @@ function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
     budgets: { findByUserAndMonth: vi.fn(async () => opts.budgets ?? []), findByName: vi.fn(), create: vi.fn(), incrementSpent: vi.fn(), update: vi.fn() } as never,
     recurrings: { findAllByUserId: vi.fn(async () => opts.recurrings ?? []), findByDayOfMonth: vi.fn(), findDueToday: vi.fn(), findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), update: vi.fn(), deactivate: vi.fn() } as never,
+    cardStatements: {} as never,
     preferences: { findAllByUserId: vi.fn(), upsert: vi.fn(), delete: vi.fn() } as never,
     outreach: { record: vi.fn(), existsKey: vi.fn(), countSince: vi.fn() } as never,
     proactiveSettings: { get: vi.fn(), setMuted: vi.fn() } as never,

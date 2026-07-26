@@ -7,6 +7,7 @@ import type {
   RecurringPayment,
   SessionContext,
   UserPreference,
+  CardStatement,
 } from '../../domain/entities.js';
 import type { CoreMessage } from 'ai';
 
@@ -135,6 +136,18 @@ export function mapUserPreference(r: Row): UserPreference {
     userId: str(r, 'user_id'),
     key: str(r, 'key'),
     value: str(r, 'value'),
+    updatedAt: str(r, 'updated_at'),
+  };
+}
+
+export function mapCardStatement(r: Row): CardStatement {
+  return {
+    statementId: str(r, 'statement_id'),
+    userId: str(r, 'user_id'),
+    accountId: str(r, 'account_id'),
+    cycleStart: str(r, 'cycle_start'),
+    cycleEnd: str(r, 'cycle_end'),
+    createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
   };
 }
