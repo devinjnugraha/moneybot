@@ -14,7 +14,7 @@ export class NeonCardStatementRepository implements ICardStatementRepository {
   ): Promise<number> {
     const today = todayWIB(asOf);
     const lastCut = lastBillingCutOnOrBefore(billingDay, today);
-    const created = cardCreatedAt.slice(0, 10); // 'YYYY-MM-DD'
+    const created = todayWIB(new Date(cardCreatedAt));
     if (lastCut < created) return 0;
 
     let inserted = 0;
@@ -45,7 +45,7 @@ export class NeonCardStatementRepository implements ICardStatementRepository {
       [userId, accountId],
     );
     if ((accRes.rowCount ?? 0) === 0) return [];
-    const dueInDays = Number((accRes.rows[0] as Record<string, unknown>).due_in_days) || 15;
+    const dueInDays = Number((accRes.rows[0] as Record<string, unknown>).due_in_days);
 
     const stmtRes = await pool.query(
       'SELECT * FROM card_statements WHERE user_id = $1 AND account_id = $2 ORDER BY cycle_end',
