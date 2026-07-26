@@ -10,6 +10,7 @@ import type {
   ProactiveSettings,
   AccountType,
   TransactionType,
+  CardStatementWithFigures,
 } from '../domain/entities.js';
 
 // ---- Input types ----
@@ -185,7 +186,8 @@ export interface ICardStatementRepository {
     cardCreatedAt: string,
     asOf: Date,
   ): Promise<number>;
-  // getWithFigures(...) is added to this interface in Task 4.
+  /** All statements for a card with figures derived live (FIFO). `asOf` defaults to now. */
+  getWithFigures(userId: string, accountId: string, asOf?: Date): Promise<CardStatementWithFigures[]>;
 }
 
 export interface Repos {
