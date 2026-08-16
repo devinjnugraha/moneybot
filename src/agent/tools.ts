@@ -3,7 +3,10 @@ import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
 import type { Account, AccountResult, TransactionResult, Transaction, User, InsightContext, PayCardBillOk, CardPaymentResult } from '../domain/entities.js';
 import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categories.js';
-import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday } from '../domain/time.js';
+import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday, daysBetween } from '../domain/time.js';
+import { periodCompare, type BreakdownKey } from '../domain/analytics/compare.js';
+import { cashflowSummary } from '../domain/analytics/cashflow.js';
+import { resolveComparison } from '../domain/analytics/period.js';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
 
@@ -558,6 +561,89 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         .sort((a, b) => b.total - a.total);
 
       return { total, count, groups: result };
+    },
+  });
+
+  tools.get_analytics = tool({
+    description:
+      'Analitik pengeluaran dengan perbandingan periode: total + delta%, breakdown per kategori/budget/deskripsi, ' +
+      'cashflow & savings rate untuk rentang panjang. Untuk pertanyaan analisis/tren ("boros apa?", "naik dari mana?"). ' +
+      'Transfer SELALU dikecualikan (FR-10e).',
+    parameters: z.object({
+      from: z.string().describe('YYYY-MM-DD (WIB), inklusif.'),
+      to: z.string().describe('YYYY-MM-DD (WIB), inklusif.'),
+      compareWith: z.enum(['previous_period', 'previous_month', 'previous_year']).optional()
+        .describe('Periode pembanding; tanpa ini hanya periode current.'),
+      breakdown: z.enum(['category', 'budget', 'description']).optional().default('category'),
+      categoryId: z.string().optional().describe('Drill-down ke satu kategori.'),
+      budgetCodeId: z.string().optional().describe('Drill-down ke satu budget code.'),
+      topN: z.number().int().positive().optional().default(10),
+    }),
+    execute: async ({ from, to, compareWith, breakdown, categoryId, budgetCodeId, topN }) => {
+      try {
+        // Normalize the defaulted params: zod .default() is applied by the AI
+        // SDK's tool-arg parsing (generateText), not by tool() itself — execute
+        // can also be called directly (tests), where they arrive undefined.
+        const breakdownKey: BreakdownKey = breakdown ?? 'category';
+
+        const rangeFilter = (t: Transaction) =>
+          (!categoryId || t.categoryId === categoryId) &&
+          (!budgetCodeId || t.budgetCodeId === budgetCodeId);
+
+        const currentRows = (await repos.transactions.findByDateRange(userId, from, to)).filter(rangeFilter);
+        const comparison = compareWith
+          ? { label: compareWith, ...resolveComparison(from, to, compareWith) }
+          : undefined;
+        const previousRows = comparison
+          ? (await repos.transactions.findByDateRange(userId, comparison.from, comparison.to)).filter(rangeFilter)
+          : undefined;
+
+        const result = periodCompare(currentRows, previousRows, {
+          breakdown: breakdownKey,
+          topN,
+        });
+
+        // Decorate group labels (module returns raw keys; it stays pure).
+        const categoryMap = new Map(CATEGORIES.map((c) => [c.categoryId, c]));
+        const budgetMap = breakdownKey === 'budget'
+          ? new Map(
+              (await repos.budgets.findByUserAndMonth(
+                userId, Number(from.slice(0, 4)), Number(from.slice(5, 7)),
+              )).map((b) => [b.budgetCodeId, b]),
+            )
+          : new Map();
+        const groups = result.groups.map((g) => {
+          let label = g.key;
+          let icon: string | undefined;
+          if (breakdownKey === 'category') {
+            const cat = g.key !== '__uncategorized__' ? categoryMap.get(g.key) : undefined;
+            label = cat?.name ?? 'Tanpa Kategori';
+            icon = cat?.icon;
+          } else if (breakdownKey === 'budget') {
+            const bc = g.key !== '__none__' ? budgetMap.get(g.key) : undefined;
+            label = bc?.name ?? 'Tanpa Budget';
+          } // 'description': normalized key is already the readable label
+          return { ...g, label, icon };
+        });
+
+        // Cashflow for ranges spanning >= 28 days (spec §3.1 "spans ≥ 1 month").
+        const cashflow = daysBetween(from, to) + 1 >= 28
+          ? cashflowSummary(currentRows)
+          : undefined;
+
+        return {
+          range: { from, to },
+          comparison,
+          currentTotal: result.currentTotal,
+          previousTotal: result.previousTotal,
+          deltaPct: result.deltaPct,
+          groups,
+          ...(cashflow ? { cashflow, savingsRate: cashflow.savingsRate } : {}),
+        };
+      } catch (e) {
+        logEvent('error', 'get_analytics failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menghitung analitik. Coba lagi.' };
+      }
     },
   });
 
