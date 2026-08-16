@@ -66,7 +66,7 @@ src/domain/analytics/
 | `pacing(tx, budgets, {today})` | current-month transactions + budget rows | per budget: spent, run-rate = spent/elapsedDays, projected month-end = run-rate×daysInMonth, Δ vs monthlyBudget, verdict `on_track \| tight \| over_pace`, projected-overrun date when `over_pace` |
 | `obligations(recurrings, statements, accounts, {today})` | active recurring payments, open card statements, accounts | next-30-day bills (recurring fires + card dues by derived due date) vs liquid balance = Σ balances of `cash`+`bank` accounts; coverage verdict `covered \| tight \| short` + shortfall amount |
 | `leakCandidates(tx, recurrings, {today})` | ≥ 2 months of expense transactions + recurring rows | (a) description-group spikes: normalized groups whose total grew > 50% MoM with ≥ 2 occurrences each side; (b) recurring creep: active recurring total this month vs 3-mo-ago baseline, new subscriptions added; (c) dormant subscriptions: active recurring with no matching transaction occurrence in 60 days |
-| `healthVerdict(inputs, {today})` | outputs of the above + budgets + accounts | 0–100 score + components (§2.2), each `{key, label, value, display, status: 'good'\|'warn'\|'bad'\|'insufficient_data', note}` |
+| `healthVerdict(inputs, {today})` | outputs of the above + budgets + accounts | 0–100 score + components (§2.2), each `{key, label, value, display, status: 'good'\|'warn'\|'bad'\|'insufficient_data'\|'not_applicable', note}` |
 
 Thresholds (50% spike, 30-day horizon, etc.) live as named constants in the module with
 doc comments — tuning points, not magic numbers.
@@ -82,10 +82,10 @@ doc comments — tuning points, not magic numbers.
 | `leak_flags` | count of `leakCandidates` | 0 / 1 / ≥ 2 |
 | `trend` | expense Δ% current vs previous month | ≤ 0% / 0–25% / > 25% |
 
-Score = weighted mean of non-`insufficient_data` components mapped to 100/50/0
-(weights: savings_rate .25, budget_adherence .15, bill_coverage .25, runway .20,
-leak_flags .05, trend .10). If every component is `insufficient_data`, the tool returns
-that verdict instead of a score.
+Score = weighted mean of scorable components (those not `insufficient_data` /
+`not_applicable`) mapped to 100/50/0 (weights: savings_rate .25, budget_adherence .15,
+bill_coverage .25, runway .20, leak_flags .05, trend .10). If every component is
+unscorable, the tool returns that verdict instead of a score.
 
 ### 2.3 Description normalization (`normalize.ts`)
 
@@ -107,18 +107,25 @@ min-total floor are excluded from spike detection, so one-off notes never surfac
 ```
 
 Returns: `{ current: {total, count}, previous?, deltaPct?, groups: [{label, icon?, current,
-previous?, deltaPct, pctOfTotal}], cashflow?, savingsRate? }` — cashflow/savings-rate
-included when the range spans ≥ 1 month. `compareWith` resolves via `period.ts` and is
-returned so the LLM can cite the comparison window. Transfers excluded (FR-10e), matching
+previous?, deltaPct, pctOfTotal}], cashflow?, savingsRate?, pacing? }` — cashflow/savings-rate
+included when the range spans ≥ 1 month; `pacing` (slice 2) included when the range
+covers the current in-progress month. `compareWith` resolves via `period.ts`
+(`previous_period` = the same-length window immediately preceding `from`) and is returned
+so the LLM can cite the comparison window. Transfers excluded (FR-10e), matching
 `get_report`.
 
 ### 3.2 `get_financial_health`
 
 ```
-{ month? }   // 'YYYY-MM', defaults to current WIB month
+{ month? }   // 'YYYY-MM', defaults to current WIB month; past months allowed
 ```
 
-Returns: `{ score?, components: HealthComponent[], generatedAt }` per §2.2.
+Returns: `{ score?, components: HealthComponent[], generatedAt }` per §2.2. As-of
+semantics: all components are evaluated as of the last day of the requested month
+(trailing windows end there; `trend` compares the requested month vs the one before it).
+The single exception is `bill_coverage`, which is forward-looking by nature: meaningful
+only for the current month — for a past month it returns status `not_applicable`.
+`not_applicable` components are excluded from scoring, like `insufficient_data`.
 
 ### 3.3 System-prompt advice rules
 
@@ -129,9 +136,11 @@ acknowledge `insufficient_data` components plainly; keep prose to interpretation
 
 ## 4. Proactive additions (existing engine, guard, `/nudges` mute)
 
-1. **Weekly leak alert** — Mondays ~09:05 WIB. Detector runs `leakCandidates`; fires only
-   when a candidate clears the spike floor or a new/dormant subscription is found.
-   Composer: deterministic blocks per candidate + one LLM prose line.
+1. **Weekly leak alert** — Tuesdays ~09:05 WIB (deliberately not Monday: the weekly
+   anomaly insight already lands Monday 09:00; spreading avoids stacked pushes).
+   Detector runs `leakCandidates`; fires only when a candidate clears the spike floor or
+   a new/dormant subscription is found. Composer: deterministic blocks per candidate +
+   one LLM prose line.
 2. **Monthly health digest** — 1st of month ~08:35 WIB. Renders `healthVerdict`
    components as deterministic blocks (status icons per component), score line, + LLM
    prose comparing to the previous month's components.
