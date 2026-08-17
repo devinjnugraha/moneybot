@@ -1292,7 +1292,8 @@ describe('buildTools — get_analytics pacing', () => {
         { toolCallId: 'c', messages: [] as never },
       ) as Record<string, never>;
       expect(out.pacing).toBeDefined();
-      expect((out.pacing as { items: { name: string; verdict: string }[] }).items[0]).toMatchObject({ name: 'makan', verdict: 'tight' });
+      // 600k spent by day 16 of 31 → projected 1.162.500 > 1M×1.15 → over_pace
+      expect((out.pacing as { items: { name: string; verdict: string }[] }).items[0]).toMatchObject({ name: 'makan', verdict: 'over_pace' });
     } finally {
       vi.useRealTimers();
     }
