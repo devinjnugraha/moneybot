@@ -277,6 +277,32 @@ export function morningGlanceTemplate (payload: ProactivePayload): string {
   return parts.join('\n\n')
 }
 
+interface LeakAlertData {
+  week: string
+  spikes: { label: string; current: number; previous: number; deltaPct: number }[]
+  recurring: { name: string; amount: number; kind: 'new' | 'dormant' }[]
+  recurringTotal: number
+  baselineTotal?: number
+}
+
+/** Deterministic block for the weekly leak alert (advisory spec §4.1). */
+export function leakAlertBlock (payload: ProactivePayload): string {
+  const d = payload.data as unknown as LeakAlertData
+  const lines: string[] = ['🔎 Kemungkinan bocoran:']
+  for (const s of d.spikes)
+    lines.push(`• ${s.label}: ${idr(s.current)} (+${s.deltaPct}% dari ${idr(s.previous)})`)
+  for (const r of d.recurring) {
+    if (r.kind === 'new') lines.push(`🆕 Langganan baru: ${r.name} (${idr(r.amount)})`)
+    else lines.push(`💤 Sepertinya nggak kepake: ${r.name} (${idr(r.amount)})`)
+  }
+  return lines.join('\n')
+}
+
+/** Fallback template: block only (no LLM prose). */
+export function leakAlertTemplate (payload: ProactivePayload): string {
+  return leakAlertBlock(payload)
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose (payload: ProactivePayload): string {
   switch (payload.triggerType) {
@@ -290,6 +316,8 @@ export function templateCompose (payload: ProactivePayload): string {
       return anomalyTemplate(payload)
     case 'morning_glance':
       return morningGlanceTemplate(payload)
+    case 'leak_alert':
+      return leakAlertTemplate(payload)
     default:
       return '(tidak ada pesan)'
   }

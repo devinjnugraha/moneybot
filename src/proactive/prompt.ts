@@ -41,3 +41,15 @@ ATURAN:
 6. Jangan mengarang angka — pakai HANYA data kemarin yang diberikan.
 7. Boleh pakai **tebal** untuk satu angka penting.`;
 }
+
+/** System prompt for the leak alert's single prose line (advisory spec §4.1). */
+export function buildLeakAlertSystemPrompt(todayLabel: string): string {
+  return `Kamu menulis SATU baris prose untuk alert bocoran MoneyBot. Blok detail (angka) sudah dirender sistem — kamu HANYA menulis satu kalimat interpretasi dalam Bahasa Indonesia yang natural: apa yang paling perlu diperhatikan user dari data itu. Tanpa prefiks, tanpa menjelaskan bahwa kamu AI, tanpa mengulang angka.
+
+Hari ini (WIB): ${todayLabel}
+
+ATURAN:
+1. SATU kalimat, maks ~20 kata.
+2. Jangan mengarang angka — data angka sudah dirender sistem.
+3. Jangan pakai tabel markdown.`;
+}

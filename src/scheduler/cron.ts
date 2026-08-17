@@ -12,6 +12,8 @@ import { detectScheduledSummary } from '../proactive/triggers/scheduled-summary.
 import { createBudgetThresholdDetector } from '../proactive/triggers/budget-threshold.js';
 import { createLoggingGapDetector } from '../proactive/triggers/logging-gap.js';
 import { createAnomalyDetector } from '../proactive/triggers/anomaly.js';
+import { detectLeakAlert } from '../proactive/triggers/leak-alert.js';
+import { createLeakAlertComposer } from '../proactive/composers/leak-alert.js';
 import { markdownToTelegramHTML } from '../telegram/formatter.js';
 import { bot } from '../telegram/bot.js';
 import { config } from '../config/index.js';
@@ -96,7 +98,17 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
     }).catch((err) => logEvent('error', 'proactive anomaly error', { error: (err as Error).message }));
   }, { timezone: 'Asia/Jakarta' });
 
+  // Proactive outreach — weekly leak alert, Tuesday 09:05 WIB (advisory spec §4.1;
+  // deliberately not Monday: anomaly insight already lands Monday 09:00).
+  cron.schedule(config.PROACTIVE_LEAK_CRON, () => {
+    runProactivePass({
+      detector: detectLeakAlert,
+      composer: createLeakAlertComposer(model),
+      repos, policy, now: new Date(), send,
+    }).catch((err) => logEvent('error', 'proactive leak alert error', { error: (err as Error).message }));
+  }, { timezone: 'Asia/Jakarta' });
+
   logEvent('info', 'cron jobs registered', {
-    schedules: ['*/5 * * * *', config.BUDGET_ROLLOVER_CRON, config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON],
+    schedules: ['*/5 * * * *', config.BUDGET_ROLLOVER_CRON, config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON, config.PROACTIVE_LEAK_CRON],
   });
 }
