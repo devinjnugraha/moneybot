@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildTools } from '../../src/agent/tools.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
 import type { Transaction } from '../../src/domain/entities.js';
+import type { PacingResult } from '../../src/domain/analytics/pacing.js';
 
 function mkTxn(over: Partial<Transaction>): Transaction {
   return {
@@ -40,6 +41,7 @@ type AnalyticsResult = {
   comparison?: { label: string; from: string; to: string };
   groups?: Array<{ key: string; label: string; icon?: string }>;
   cashflow?: { income: number; expense: number; net: number; savingsRate?: number };
+  pacing?: PacingResult;
 };
 
 describe('buildTools — get_analytics', () => {
@@ -124,5 +126,36 @@ describe('buildTools — get_analytics', () => {
     ) as AnalyticsResult;
     expect(out.groups).toHaveLength(1);
     expect(out.groups![0]!.label).toBe('kopi kenangan');
+  });
+});
+
+describe('buildTools — get_analytics pacing', () => {
+  it('includes pacing when the range covers the current WIB month', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z')); // WIB 2026-08-16
+    try {
+      const repos = mockRepos({ txns: [mkTxn({ date: '2026-08-10', amount: 600_000, budgetCodeId: 'b1' })] });
+      (repos.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>)
+        .mockResolvedValue([{ budgetCodeId: 'b1', userId: 'u', name: 'makan', monthlyBudget: 1_000_000, month: 8, year: 2026, spent: 600_000, isRecurring: false, createdAt: '', updatedAt: '' }]);
+      const { get_analytics } = buildTools({ userId: 'u1', repos, hasAccount: true });
+      const out = await get_analytics!.execute!(
+        { from: '2026-08-01', to: '2026-08-31' },
+        { toolCallId: 'c', messages: [] as never },
+      ) as AnalyticsResult;
+      expect(out.pacing).toBeDefined();
+      // 600k spent by day 16 of 31 → projected 1.162.500 > 1M×1.15 → over_pace
+      expect(out.pacing!.items[0]).toMatchObject({ name: 'makan', verdict: 'over_pace' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('omits pacing for past ranges', async () => {
+    const repos = mockRepos({ txns: [] });
+    const { get_analytics } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const out = await get_analytics!.execute!(
+      { from: '2026-06-01', to: '2026-06-30' },
+      { toolCallId: 'c', messages: [] as never },
+    ) as AnalyticsResult;
+    expect(out.pacing).toBeUndefined();
   });
 });

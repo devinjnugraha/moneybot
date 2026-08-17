@@ -6,6 +6,7 @@ import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categ
 import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday, daysBetween } from '../domain/time.js';
 import { periodCompare, type BreakdownKey } from '../domain/analytics/compare.js';
 import { cashflowSummary } from '../domain/analytics/cashflow.js';
+import { pacing } from '../domain/analytics/pacing.js';
 import { resolveComparison } from '../domain/analytics/period.js';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
@@ -631,6 +632,17 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
           ? cashflowSummary(currentRows)
           : undefined;
 
+        // Pacing rides along when the range covers the current in-progress
+        // WIB month (spec §3.1): projection is only meaningful mid-month.
+        const today = todayWIB();
+        const pacingResult = from <= today && today <= to
+          ? pacing(
+              currentRows,
+              await repos.budgets.findByUserAndMonth(userId, wibYear(), wibMonth()),
+              today,
+            )
+          : undefined;
+
         return {
           range: { from, to },
           comparison,
@@ -639,6 +651,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
           deltaPct: result.deltaPct,
           groups,
           ...(cashflow ? { cashflow, savingsRate: cashflow.savingsRate } : {}),
+          ...(pacingResult ? { pacing: pacingResult } : {}),
         };
       } catch (e) {
         logEvent('error', 'get_analytics failed', { userId, error: (e as Error).message });
