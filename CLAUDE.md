@@ -8,7 +8,7 @@ Personal-finance LLM agent on Telegram (Bahasa Indonesia). TypeScript/Node, gram
 
 ## ⚠️ Active work in progress
 
-The Slice 0+1 build is mid-flight on branch `feat/slice-0-1`. **Before continuing, read `docs/superpowers/plans/2026-06-14-moneybot-slice-0-1-RESUME.md`** — it has the exact stop point, the fixes that override the plan, and the resume procedure.
+Advisory layer (analytics + financial health) built on branch `feat/advisory-layer` per `docs/superpowers/plans/2026-08-16-advisory-layer.md` — all 13 tasks implemented; pending merge.
 
 ## Architecture seams (hard rules)
 
