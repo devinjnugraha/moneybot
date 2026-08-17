@@ -3,11 +3,15 @@ import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
 import type { Account, AccountResult, TransactionResult, Transaction, User, InsightContext, PayCardBillOk, CardPaymentResult } from '../domain/entities.js';
 import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categories.js';
-import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday, daysBetween } from '../domain/time.js';
+import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday, daysBetween, addDays } from '../domain/time.js';
 import { periodCompare, type BreakdownKey } from '../domain/analytics/compare.js';
 import { cashflowSummary } from '../domain/analytics/cashflow.js';
 import { pacing } from '../domain/analytics/pacing.js';
-import { resolveComparison } from '../domain/analytics/period.js';
+import { healthVerdict } from '../domain/analytics/health.js';
+import { obligations } from '../domain/analytics/obligations.js';
+import type { ObligationsResult } from '../domain/analytics/obligations.js';
+import { leakCandidates, DORMANT_DAYS } from '../domain/analytics/leaks.js';
+import { monthBounds, resolveComparison } from '../domain/analytics/period.js';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
 
@@ -661,6 +665,94 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       } catch (e) {
         logEvent('error', 'get_analytics failed', { userId, error: (e as Error).message });
         return { status: 'error', message: 'Gagal menghitung analitik. Coba lagi.' };
+      }
+    },
+  });
+
+  tools.get_financial_health = tool({
+    description:
+      'Skor kesehatan keuangan bulanan (0-100) + 6 komponen: rasio tabungan, kedisiplinan budget, cakupan tagihan 30 hari, ' +
+      'dana darurat (bulan), indikasi bocoran, tren pengeluaran. Untuk "sehat nggak keuangan aku?". Default: bulan berjalan.',
+    parameters: z.object({
+      month: z.string().optional().describe('YYYY-MM. Default: bulan berjalan (WIB). Bulan lampau juga bisa.'),
+    }),
+    execute: async ({ month }) => {
+      try {
+        const today = todayWIB();
+        const currentMonth = today.slice(0, 7);
+        const target = month ?? currentMonth;
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(target) || target > currentMonth) {
+          return { status: 'missing_fields', missing: ['month'], message: 'Format YYYY-MM, tidak boleh di masa depan.' };
+        }
+        const isCurrent = target === currentMonth;
+        const asOf = isCurrent ? today : monthBounds(Number(target.slice(0, 4)), Number(target.slice(5, 7))).to;
+
+        const y = Number(target.slice(0, 4));
+        const m = Number(target.slice(5, 7));
+
+        // Calendar helper: offset 0 = judged month, -1..-3 = trailing months.
+        const monthOf = (offset: number): { from: string; to: string } => {
+          let mm = m + offset, yy = y;
+          while (mm < 1) { mm += 12; yy -= 1; }
+          return monthBounds(yy, mm);
+        };
+
+        // One fetch spanning the 3 trailing months + the judged month.
+        const allTx = await repos.transactions.findByDateRange(userId, monthOf(-3).from, asOf);
+
+        const inMonth = (from: string, to: string) => allTx.filter((t) => t.date >= from && t.date <= to);
+
+        const trailingCashflow = [-3, -2, -1].map((o) => {
+          const b = monthOf(o);
+          return cashflowSummary(inMonth(b.from, b.to));
+        });
+        const judged = monthOf(0);
+        const prev = monthOf(-1);
+        const currentExpense = inMonth(judged.from, judged.to).filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+        const previousExpense = inMonth(prev.from, prev.to).filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+        const budgets = await repos.budgets.findByUserAndMonth(userId, y, m);
+        const pacingResult = pacing(inMonth(judged.from, judged.to), budgets, asOf);
+
+        const [accounts, recurrings] = await Promise.all([
+          repos.accounts.findAllByUserId(userId),
+          repos.recurrings.findAllByUserId(userId),
+        ]);
+        const liquidBalance = accounts
+          .filter((a) => a.isActive && (a.type === 'cash' || a.type === 'bank'))
+          .reduce((s, a) => s + a.balance, 0);
+
+        // bill_coverage is forward-looking → current month only (spec §3.2).
+        let obligationsResult: ObligationsResult | undefined;
+        if (isCurrent) {
+          const cardDues: { name: string; amount: number; dueDate: string }[] = [];
+          for (const a of accounts.filter((x) => x.type === 'card' && x.billingDay != null && x.isActive)) {
+            const stmts = await repos.cardStatements.getWithFigures(userId, a.accountId);
+            for (const s of stmts) {
+              if (s.remainingDue > 0) cardDues.push({ name: a.name, amount: s.remainingDue, dueDate: s.dueDate });
+            }
+          }
+          obligationsResult = obligations({ recurrings, accounts, cardDues, today });
+        }
+
+        const leaks = leakCandidates({
+          currentTx: inMonth(judged.from, judged.to),
+          previousTx: inMonth(prev.from, prev.to),
+          tx60d: allTx.filter((t) => t.date >= addDays(asOf, -DORMANT_DAYS)), // real 60d dormancy window
+          recurrings,
+          today: asOf,
+        });
+        const leakCount = leaks.spikes.length + leaks.recurring.length;
+
+        return healthVerdict({
+          month: target, asOf,
+          trailingCashflow, pacing: pacingResult,
+          obligations: obligationsResult,
+          liquidBalance, currentExpense, previousExpense, leakCount,
+        });
+      } catch (e) {
+        logEvent('error', 'get_financial_health failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menghitung skor kesehatan. Coba lagi.' };
       }
     },
   });

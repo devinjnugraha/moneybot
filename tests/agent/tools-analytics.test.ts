@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildTools } from '../../src/agent/tools.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
-import type { Transaction } from '../../src/domain/entities.js';
+import type { Account, RecurringPayment, Transaction } from '../../src/domain/entities.js';
 import type { PacingResult } from '../../src/domain/analytics/pacing.js';
 
 function mkTxn(over: Partial<Transaction>): Transaction {
@@ -221,6 +221,90 @@ describe('buildTools — get_analytics pacing', () => {
       ) as AnalyticsResult;
       expect(out.currentTotal).toBe(50_000);              // groups stay drilled
       expect(out.pacing!.items[0]!.spent).toBe(650_000);  // pacing sees both budgets' spend
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('buildTools — get_financial_health', () => {
+  type HealthResult = {
+    month?: string;
+    asOf?: string;
+    score?: number;
+    error?: string;
+    components?: Array<{ key: string; status: string; display: string }>;
+  };
+
+  const budgetRows = [
+    { budgetCodeId: 'b1', userId: 'u1', name: 'makan', monthlyBudget: 1_000_000, month: 8, year: 2026, spent: 400_000, isRecurring: false, createdAt: '', updatedAt: '' },
+  ];
+
+  function healthRepos(txns: Transaction[], opts: { accounts?: Account[]; recurrings?: RecurringPayment[] } = {}): Repos {
+    const base = mockRepos({ txns });
+    (base.accounts.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue(opts.accounts ?? []);
+    (base.recurrings.findAllByUserId as ReturnType<typeof vi.fn>).mockResolvedValue(opts.recurrings ?? []);
+    (base.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>).mockResolvedValue(budgetRows);
+    return base;
+  }
+
+  it('is a read tool (registered before onboarding)', () => {
+    expect(buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: false }).get_financial_health).toBeDefined();
+  });
+
+  it('returns score + components for a healthy current month', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z')); // WIB 2026-08-16
+    try {
+      const txns: Transaction[] = [
+        // trailing months: 5.0M income, ~3.5M expense each
+        ...([['2026-05', 3_500_000], ['2026-06', 3_500_000], ['2026-07', 3_600_000]] as const).flatMap(([mo, exp]) => [
+          mkTxn({ date: `${mo}-10`, type: 'income', amount: 5_000_000 }),
+          mkTxn({ date: `${mo}-15`, amount: exp }),
+        ]),
+        // current month
+        mkTxn({ date: '2026-08-05', type: 'income', amount: 5_000_000 }),
+        mkTxn({ date: '2026-08-10', amount: 1_000_000, budgetCodeId: 'b1' }),
+      ];
+      const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 15_000_000, isActive: true, createdAt: '', updatedAt: '' }];
+      const { get_financial_health } = buildTools({ userId: 'u1', repos: healthRepos(txns, { accounts }), hasAccount: true });
+      const out = await get_financial_health!.execute!(
+        {},
+        { toolCallId: 'c', messages: [] as never },
+      ) as HealthResult;
+      expect(out.month).toBe('2026-08');
+      expect(out.score).toEqual(expect.any(Number));
+      expect(out.components!.map((c) => c.key)).toEqual(['savings_rate', 'budget_adherence', 'bill_coverage', 'runway', 'leak_flags', 'trend']);
+      const runway = out.components!.find((c) => c.key === 'runway')!;
+      expect(runway.status).toBe('good'); // 15M / ~3.53M ≈ 4.2 bulan
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('past month: bill_coverage not_applicable, no obligations fetch needed', async () => {
+    const txns: Transaction[] = [mkTxn({ date: '2026-07-10', type: 'income', amount: 5_000_000 }), mkTxn({ date: '2026-07-15', amount: 3_000_000 })];
+    const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 10_000_000, isActive: true, createdAt: '', updatedAt: '' }];
+    const { get_financial_health } = buildTools({ userId: 'u1', repos: healthRepos(txns, { accounts }), hasAccount: true });
+    const out = await get_financial_health!.execute!(
+      { month: '2026-07' },
+      { toolCallId: 'c', messages: [] as never },
+    ) as HealthResult;
+    expect(out.asOf).toBe('2026-07-31');
+    const coverage = out.components!.find((c) => c.key === 'bill_coverage')!;
+    expect(coverage.status).toBe('not_applicable');
+  });
+
+  it('thin history: components degrade, tool never errors', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z'));
+    try {
+      const { get_financial_health } = buildTools({ userId: 'u1', repos: healthRepos([]), hasAccount: true });
+      const out = await get_financial_health!.execute!(
+        {},
+        { toolCallId: 'c', messages: [] as never },
+      ) as HealthResult;
+      const statuses = out.components!.map((c) => c.status);
+      expect(statuses).toContain('insufficient_data');
+      expect(out.error).toBeUndefined();
     } finally {
       vi.useRealTimers();
     }
