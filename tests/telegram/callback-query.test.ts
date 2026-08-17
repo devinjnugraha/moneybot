@@ -3,6 +3,7 @@ import { dispatchRecCallback } from '../../src/telegram/callback-query.js';
 import type { Repos } from '../../src/repositories/interfaces.js';
 import type { CallbackActionResult } from '../../src/telegram/callback-query.js';
 import type { RecurringPayment, SessionContext } from '../../src/domain/entities.js';
+import { todayWIB } from '../../src/domain/time.js';
 import { logEvent } from '../../src/utils/logger.js';
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -103,11 +104,15 @@ describe('dispatchRecCallback', () => {
   });
 
   it('confirm: blocks double-fire same month', async () => {
+    // The guard compares lastFiredAt's month against the LIVE current month,
+    // so the fixture must be built from todayWIB() — a hardcoded month made
+    // this test a time bomb that failed on every month rollover.
+    const thisMonth = todayWIB().slice(0, 7);
     const repos = mockRepos({
       rp: {
         recurringId: 'rp-1', userId: 'u1', name: 'Spotify', amount: 59_900,
         accountId: 'a1', categoryId: 'entertainment.streaming', dayOfMonth: 25,
-        isActive: true, nextFireAt: '2026-06-25', lastFiredAt: '2026-06-19',
+        isActive: true, nextFireAt: `${thisMonth}-25`, lastFiredAt: `${thisMonth}-19`,
         createdAt: '', updatedAt: '',
       },
     });

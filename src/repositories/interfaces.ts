@@ -55,6 +55,7 @@ export interface CreateBudgetCodeInput {
   year: number;
   isRecurring?: boolean; // default false; only roll-over sets oldBudgetId
   oldBudgetId?: string;
+  rules?: string; // free-text auto-tagging rule; rolls over with recurring budgets
 }
 
 export interface CreateRecurringPaymentInput {
@@ -121,10 +122,10 @@ export interface IBudgetCodeRepository {
   update(userId: string, budgetCodeId: string, patch: Partial<BudgetCode>): Promise<BudgetCode>;
   /**
    * Create current-month copies of the user's recurring budgets that don't yet
-   * exist for (year, month). Copies name + the most-recent prior allocation,
-   * resets spent to 0, sets is_recurring=true, and links old_budget_id to the
-   * source row. Idempotent (no-op if the month already has the name). Returns
-   * the number of rows created.
+   * exist for (year, month). Copies name + the most-recent prior allocation
+   * and its rules, resets spent to 0, sets is_recurring=true, and links
+   * old_budget_id to the source row. Idempotent (no-op if the month already
+   * has the name). Returns the number of rows created.
    */
   rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number>;
 }

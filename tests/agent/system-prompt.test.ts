@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, enrichSystemPrompt } from '../../src/agent/system-prompt.js';
 import type { Account, BudgetCode, UserPreference } from '../../src/domain/entities.js';
 
-describe('buildSystemPrompt — standardized transaction confirmation (rule 12)', () => {
+describe('buildSystemPrompt — standardized transaction confirmation', () => {
   const prompt = buildSystemPrompt('2026-06-22');
 
-  it('includes the rule 12 confirmation-format section', () => {
-    expect(prompt).toMatch(/KONFIRMASI TRANSAKSI/);
+  it('includes the per-type confirmation-format sections', () => {
+    expect(prompt).toMatch(/FORMAT KONFIRMASI EXPENSE\/INCOME/);
+    expect(prompt).toMatch(/FORMAT KONFIRMASI TRANSFER/);
   });
 
   it('hardcodes the account-icon mapping by account type', () => {
@@ -23,10 +24,7 @@ describe('buildSystemPrompt — standardized transaction confirmation (rule 12)'
 
   it('instructs truncating transactionId to the first 8 chars', () => {
     expect(prompt).toContain('8 karakter pertama');
-  });
-
-  it('shows the worked example with a truncated id (550e8400)', () => {
-    expect(prompt).toContain('550e8400');
+    expect(prompt).toContain('<transactionId8>');
   });
 
   it('renders the taxonomy id-first so the model copies a clean categoryId (icon kept, after the id)', () => {
@@ -101,17 +99,17 @@ describe('buildSystemPrompt — account-block rules', () => {
     expect(prompt).toContain('get_account_balance');
   });
 
-  it('rule 11 onboards when the AKUN USER block is absent or empty', () => {
-    expect(prompt).toMatch(/blok AKUN USER (tidak ada|kosong)/);
+  it('onboards when the AKUN USER block is absent or empty', () => {
+    expect(prompt).toMatch(/Jika AKUN USER kosong\/tidak ada/);
   });
 });
 
-describe('buildSystemPrompt — post-write insight (rule 4)', () => {
+describe('buildSystemPrompt — post-write insight', () => {
   const prompt = buildSystemPrompt('2026-06-22');
 
-  it('mentions insightContext and the optional one-line insight palette', () => {
-    expect(prompt).toContain('insightContext');
-    expect(prompt).toMatch(/INSIGHT PASCA-TULIS/);
+  it('caps the optional post-write insight at one line with a notability bar', () => {
+    expect(prompt).toMatch(/SETELAH TOOL TULIS BERHASIL/);
+    expect(prompt).toMatch(/insight maksimal satu kalimat hanya jika menonjol/);
   });
 
   it('keeps budget-status mandatory when a transaction is budgeted', () => {
@@ -119,12 +117,12 @@ describe('buildSystemPrompt — post-write insight (rule 4)', () => {
   });
 });
 
-describe('buildSystemPrompt — Telegram formatting (rule 13: no markdown tables)', () => {
+describe('buildSystemPrompt — Telegram formatting (no markdown tables)', () => {
   const prompt = buildSystemPrompt('2026-06-22');
 
   it('forbids markdown tables because Telegram cannot render them', () => {
-    expect(prompt).toContain('DILARANG TABEL');
-    expect(prompt).toMatch(/tidak merender tabel/);
+    expect(prompt).toContain('Jangan pakai tabel Markdown');
+    expect(prompt).toMatch(/satu baris per item/);
   });
 
   it('mandates a one-line-per-item alternative for lists and reports', () => {
@@ -165,6 +163,43 @@ describe('enrichSystemPrompt — recurring marker', () => {
   it('does not mark one-time budgets', () => {
     const out = enrichSystemPrompt(base, { budgets: [oneTime] });
     expect(out).not.toContain('(bulanan)');
+  });
+});
+
+describe('enrichSystemPrompt — budget rules', () => {
+  const base = 'BASE';
+  const withRules: BudgetCode = {
+    budgetCodeId: 'bc-r', userId: 'u1', name: 'Terea', monthlyBudget: 300_000,
+    month: 7, year: 2026, spent: 0, isRecurring: true, createdAt: '', updatedAt: '',
+    rules: 'semua expense yang menyebut terea masuk ke budget ini',
+  };
+  const withoutRules: BudgetCode = {
+    budgetCodeId: 'bc-n', userId: 'u1', name: 'Trip', monthlyBudget: 1_000_000,
+    month: 7, year: 2026, spent: 0, isRecurring: false, createdAt: '', updatedAt: '',
+  };
+
+  it('appends the rules to the budget line when present', () => {
+    const out = enrichSystemPrompt(base, { budgets: [withRules] });
+    expect(out).toContain('aturan: semua expense yang menyebut terea masuk ke budget ini');
+  });
+
+  it('omits the rules suffix when the budget has none', () => {
+    const out = enrichSystemPrompt(base, { budgets: [withoutRules] });
+    expect(out).toContain('Trip');
+    expect(out).not.toContain('aturan:');
+  });
+});
+
+describe('buildSystemPrompt — budget rules guidance', () => {
+  const prompt = buildSystemPrompt('2026-08-17');
+
+  it('routes budget-tagging rules to the budget code, not preferences', () => {
+    expect(prompt).toContain('update_budget_code');
+    expect(prompt).toMatch(/BUKAN di remember_preference/);
+  });
+
+  it('mandates auto-tagging from the budget block rules', () => {
+    expect(prompt).toMatch(/otomatis tag transaksi/i);
   });
 });
 

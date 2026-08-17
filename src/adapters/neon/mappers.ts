@@ -92,6 +92,7 @@ export function mapBudgetCode(r: Row): BudgetCode {
     spent: num(r, 'spent'),
     isRecurring: bool(r, 'is_recurring'),
     oldBudgetId: maybeStr(r, 'old_budget_id'),
+    rules: maybeStr(r, 'rules'),
     createdAt: str(r, 'created_at'),
     updatedAt: str(r, 'updated_at'),
   };

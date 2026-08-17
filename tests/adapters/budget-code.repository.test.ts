@@ -82,6 +82,38 @@ describe('NeonBudgetCodeRepository', () => {
     expect(updated.monthlyBudget).toBe(750_000);
   });
 
+  it('persists rules on create', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const bc = await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: 6, year: 2026,
+      rules: 'semua expense yang menyebut terea masuk ke budget ini',
+    });
+    expect(bc.rules).toBe('semua expense yang menyebut terea masuk ke budget ini');
+    const found = await budgets.findByName(user.userId, 'terea', 2026, 6);
+    expect(found?.rules).toBe('semua expense yang menyebut terea masuk ke budget ini');
+  });
+
+  it('sets rules via update, clears with empty string, keeps them when patch omits rules', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const bc = await budgets.create({ userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: 6, year: 2026 });
+
+    // set
+    await budgets.update(user.userId, bc.budgetCodeId, { rules: 'expense terea masuk sini' });
+    expect((await budgets.findByName(user.userId, 'Terea', 2026, 6))?.rules).toBe('expense terea masuk sini');
+
+    // omitted from patch → preserved
+    await budgets.update(user.userId, bc.budgetCodeId, { monthlyBudget: 350_000 });
+    const kept = await budgets.findByName(user.userId, 'Terea', 2026, 6);
+    expect(kept?.monthlyBudget).toBe(350_000);
+    expect(kept?.rules).toBe('expense terea masuk sini');
+
+    // '' → cleared
+    await budgets.update(user.userId, bc.budgetCodeId, { rules: '' });
+    expect((await budgets.findByName(user.userId, 'Terea', 2026, 6))?.rules).toBeUndefined();
+  });
+
   it('rolls a prior-month recurring budget into the current month (spent reset, lineage set)', async () => {
     const user = await seedUser();
     const budgets = new NeonBudgetCodeRepository();
@@ -102,6 +134,27 @@ describe('NeonBudgetCodeRepository', () => {
     expect(current[0]!.spent).toBe(0);
     expect(current[0]!.isRecurring).toBe(true);
     expect(current[0]!.oldBudgetId).toBe(src.budgetCodeId);
+  });
+
+  it('copies rules forward on roll-over (most recent instance wins)', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const prev1 = priorMonth(cur.year, cur.month);
+    const prev2 = priorMonth(prev1.year, prev1.month);
+    await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: prev2.month, year: prev2.year,
+      isRecurring: true, rules: 'aturan lama',
+    });
+    await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: prev1.month, year: prev1.year,
+      isRecurring: true, rules: 'semua expense yang menyebut terea',
+    });
+
+    await budgets.rollRecurringIntoMonth(user.userId, cur.year, cur.month);
+    const current = await budgets.findByUserAndMonth(user.userId, cur.year, cur.month);
+    expect(current).toHaveLength(1);
+    expect(current[0]!.rules).toBe('semua expense yang menyebut terea');
   });
 
   it('is idempotent (second call creates nothing)', async () => {

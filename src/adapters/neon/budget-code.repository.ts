@@ -23,11 +23,11 @@ export class NeonBudgetCodeRepository implements IBudgetCodeRepository {
 
   async create(input: CreateBudgetCodeInput): Promise<BudgetCode> {
     const { rows } = await pool.query(
-      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, old_budget_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, old_budget_id, rules)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [input.userId, input.name, input.monthlyBudget, input.month, input.year,
-       input.isRecurring ?? false, input.oldBudgetId ?? null],
+       input.isRecurring ?? false, input.oldBudgetId ?? null, input.rules ?? null],
     );
     return mapBudgetCode(rows[0] as Record<string, unknown>);
   }
@@ -46,20 +46,22 @@ export class NeonBudgetCodeRepository implements IBudgetCodeRepository {
       `UPDATE budget_codes
        SET name = COALESCE($3, name),
            monthly_budget = COALESCE($4, monthly_budget),
+           -- rules: undefined (NULL param) keeps the value; '' clears it to NULL.
+           rules = CASE WHEN $5::text = '' THEN NULL ELSE COALESCE($5, rules) END,
            updated_at = NOW()
        WHERE user_id = $1 AND budget_code_id = $2
        RETURNING *`,
-      [userId, budgetCodeId, patch.name ?? null, patch.monthlyBudget ?? null],
+      [userId, budgetCodeId, patch.name ?? null, patch.monthlyBudget ?? null, patch.rules ?? null],
     );
     return mapBudgetCode(rows[0] as Record<string, unknown>);
   }
 
   async rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number> {
     const result = await pool.query(
-      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, spent, old_budget_id)
-       SELECT user_id, name, monthly_budget, $3, $2, true, 0, budget_code_id
+      `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, spent, old_budget_id, rules)
+       SELECT user_id, name, monthly_budget, $3, $2, true, 0, budget_code_id, rules
        FROM (
-         SELECT DISTINCT ON (name) name, monthly_budget, budget_code_id, user_id
+         SELECT DISTINCT ON (name) name, monthly_budget, budget_code_id, user_id, rules
          FROM budget_codes
          WHERE user_id = $1
            AND is_recurring = true

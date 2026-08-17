@@ -49,6 +49,7 @@ export interface BudgetCode {
   spent: number;
   isRecurring: boolean; // true → rolls into each new month on the 1st
   oldBudgetId?: string; // immediate predecessor this was rolled over from
+  rules?: string; // free-text auto-tagging rule ("expense terea → budget ini"), LLM-interpreted
   createdAt: string;
   updatedAt: string;
 }

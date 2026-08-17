@@ -1,7 +1,7 @@
 import { tool, type CoreTool } from 'ai';
 import { z } from 'zod';
 import type { Repos } from '../repositories/interfaces.js';
-import type { Account, AccountResult, TransactionResult, Transaction, User, InsightContext, PayCardBillOk, CardPaymentResult } from '../domain/entities.js';
+import type { Account, AccountResult, TransactionResult, Transaction, User, InsightContext, PayCardBillOk, CardPaymentResult, BudgetCode } from '../domain/entities.js';
 import { CATEGORIES, isValidCategoryId, CATEGORY_OPTIONS } from '../domain/categories.js';
 import { todayWIB, wibMonth, wibYear, nextFireDate, wibISOWeekMonday, daysBetween, addDays } from '../domain/time.js';
 import { periodCompare, type BreakdownKey } from '../domain/analytics/compare.js';
@@ -305,6 +305,7 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         name: c.name,
         monthlyBudget: c.monthlyBudget,
         spent: c.spent,
+        ...(c.rules ? { rules: c.rules } : {}),
       }));
     },
   });
@@ -1095,21 +1096,24 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
   tools.create_budget_code = tool({
     description:
       'Buat budget code baru dengan alokasi bulanan. Default month/year dari WIB. ' +
-      'isRecurring=true → budget bulanan: dibuat ulang otomatis tiap tanggal 1 dengan alokasi sama (spent reset).',
+      'isRecurring=true → budget bulanan: dibuat ulang otomatis tiap tanggal 1 dengan alokasi sama (spent reset). ' +
+      'rules = aturan bebas kapan transaksi otomatis di-tag ke budget ini (ikut terbawa tiap bulan untuk budget bulanan).',
     parameters: z.object({
       name: z.string(),
       monthlyBudget: z.number().positive(),
       isRecurring: z.boolean().describe('true = budget bulanan (recurring tiap tanggal 1); false = sekali untuk bulan ini.'),
+      rules: z.string().optional().describe('Aturan auto-tagging bebas, mis. "semua expense yang menyebut terea masuk ke budget ini".'),
       month: z.number().int().min(1).max(12).optional(),
       year: z.number().int().positive().optional(),
     }),
-    execute: async ({ name, monthlyBudget, isRecurring, month, year }) => {
+    execute: async ({ name, monthlyBudget, isRecurring, rules, month, year }) => {
       try {
         const bc = await repos.budgets.create({
           userId,
           name,
           monthlyBudget,
           isRecurring,
+          rules,
           month: month ?? wibMonth(),
           year: year ?? wibYear(),
         });
@@ -1117,6 +1121,52 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       } catch (e) {
         logEvent('error', 'create_budget_code failed', { userId, error: (e as Error).message });
         return { status: 'error', message: 'Gagal membuat budget code. Coba lagi.' };
+      }
+    },
+  });
+
+  tools.update_budget_code = tool({
+    description:
+      'Perbarui budget code: alokasi bulanan dan/atau aturan auto-tagging. ' +
+      'budgetCodeId bisa nama budget (mis. "terea") atau UUID. ' +
+      'rules: string kosong ("") menghapus aturan.',
+    parameters: z.object({
+      budgetCodeId: z.string().describe('Nama budget atau budgetCodeId. Resolve via blok BUDGET CODE BULAN INI / get_budget_codes.'),
+      monthlyBudget: z.number().positive().optional(),
+      rules: z.string().optional().describe('Aturan auto-tagging bebas. "" = hapus aturan.'),
+      month: z.number().int().min(1).max(12).optional(),
+      year: z.number().int().positive().optional(),
+    }),
+    execute: async ({ budgetCodeId, monthlyBudget, rules, month, year }) => {
+      if (monthlyBudget === undefined && rules === undefined) {
+        return { status: 'missing_fields', missing: ['monthlyBudget', 'rules'] };
+      }
+      try {
+        const m = month ?? wibMonth();
+        const y = year ?? wibYear();
+        const codes = await repos.budgets.findByUserAndMonth(userId, y, m);
+        // Names are UNIQUE per (user, name, year, month), so a name match is
+        // unambiguous within the month; UUIDs match exactly one row.
+        const isUuid = /^[0-9a-f-]{36}$/.test(budgetCodeId);
+        const needle = budgetCodeId.trim().toLowerCase();
+        const target = codes.find((c) =>
+          isUuid ? c.budgetCodeId.toLowerCase() === needle : c.name.toLowerCase() === needle,
+        );
+        if (!target) {
+          return {
+            status: 'missing_fields',
+            missing: ['budgetCodeId'],
+            options: { budgets: codes.map((c) => ({ budgetCodeId: c.budgetCodeId, name: c.name })) },
+          };
+        }
+        const patch: Partial<BudgetCode> = {};
+        if (monthlyBudget !== undefined) patch.monthlyBudget = monthlyBudget;
+        if (rules !== undefined) patch.rules = rules.trim() ? rules : '';
+        const updated = await repos.budgets.update(userId, target.budgetCodeId, patch);
+        return { status: 'ok', data: updated };
+      } catch (e) {
+        logEvent('error', 'update_budget_code failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal memperbarui budget code. Coba lagi.' };
       }
     },
   });

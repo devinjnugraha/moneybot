@@ -296,6 +296,25 @@ describe('buildTools — get_budget_codes (T04)', () => {
     expect(arr).toHaveLength(1);
     expect(arr[0]!.name).toBe('Jajan');
   });
+
+  it('includes rules when present, omits the field when absent', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [
+          { budgetCodeId: 'b1', userId: 'u1', name: 'Terea', monthlyBudget: 300_000, month: 6, year: 2026, spent: 0, rules: 'semua expense yang menyebut terea', createdAt: '', updatedAt: '' },
+          { budgetCodeId: 'b2', userId: 'u1', name: 'Jajan', monthlyBudget: 500_000, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '' },
+        ]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { get_budget_codes } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const arr = (await callExec(get_budget_codes, {})) as unknown as Array<{ name: string; rules?: string }>;
+    expect(arr.find((c) => c.name === 'Terea')!.rules).toBe('semua expense yang menyebut terea');
+    expect(arr.find((c) => c.name === 'Jajan')!.rules).toBeUndefined();
+  });
 });
 
 describe('buildTools — get_transactions (T09)', () => {
@@ -762,6 +781,102 @@ describe('buildTools — create_budget_code (T05)', () => {
     const res = await callExec(create_budget_code, { name: 'Jajan', monthlyBudget: 500_000, isRecurring: true });
     expect(res.status).toBe('ok');
     expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jajan', monthlyBudget: 500_000, isRecurring: true }));
+  });
+
+  it('forwards rules to the repository', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(),
+        findByName: vi.fn(),
+        create: vi.fn(async () => ({ budgetCodeId: 'b-new', userId: 'u1', name: 'Terea', monthlyBudget: 300_000, month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '' })),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { create_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_budget_code, {
+      name: 'Terea', monthlyBudget: 300_000, isRecurring: true, rules: 'semua expense yang menyebut terea',
+    });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.create).toHaveBeenCalledWith(expect.objectContaining({ rules: 'semua expense yang menyebut terea' }));
+  });
+});
+
+describe('buildTools — update_budget_code', () => {
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  const terea = {
+    budgetCodeId: uuid, userId: 'u1', name: 'Terea', monthlyBudget: 300_000,
+    month: 6, year: 2026, spent: 0, createdAt: '', updatedAt: '',
+  };
+
+  function updateRepos(codes: unknown[] = [terea]) {
+    return mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => codes),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(async (_u: string, _id: string, patch: Record<string, unknown>) => ({ ...terea, ...patch })),
+      } as never,
+    });
+  }
+
+  it('resolves by name (case-insensitive) and patches rules', async () => {
+    const repos = updateRepos();
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: 'terea', rules: 'expense terea masuk sini' });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.update).toHaveBeenCalledWith('u1', uuid, { rules: 'expense terea masuk sini' });
+  });
+
+  it('resolves by UUID and patches monthlyBudget', async () => {
+    const repos = updateRepos();
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: uuid, monthlyBudget: 400_000 });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.update).toHaveBeenCalledWith('u1', uuid, { monthlyBudget: 400_000 });
+  });
+
+  it('forwards an empty-string rules as the clear sentinel', async () => {
+    const repos = updateRepos();
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: 'terea', rules: '' });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.update).toHaveBeenCalledWith('u1', uuid, { rules: '' });
+  });
+
+  it('requires at least one field to change', async () => {
+    const repos = updateRepos();
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: 'terea' });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('monthlyBudget');
+    expect(res.missing).toContain('rules');
+  });
+
+  it('returns missing_fields with the available budgets when the name is unknown', async () => {
+    const repos = updateRepos();
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: 'nonexistent', rules: 'x' });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('budgetCodeId');
+    const opts = res.options as { budgets: Array<{ budgetCodeId: string; name: string }> };
+    expect(opts.budgets[0]!.name).toBe('Terea');
+  });
+
+  it('returns error when the repository throws', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => { throw new Error('db down'); }),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+      } as never,
+    });
+    const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(update_budget_code, { budgetCodeId: 'terea', rules: 'x' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal memperbarui budget code. Coba lagi.' });
   });
 });
 
