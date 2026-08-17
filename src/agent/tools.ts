@@ -634,10 +634,15 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
 
         // Pacing rides along when the range covers the current in-progress
         // WIB month (spec §3.1): projection is only meaningful mid-month.
+        // Rows come from a dedicated month-bounded fetch, NOT currentRows:
+        // pacing must see the WHOLE current month (a range starting mid-month
+        // or spanning several months would under/over-count) and must ignore
+        // drill-down filters (they scope the requested groups, not the
+        // month's actual spend per budget).
         const today = todayWIB();
         const pacingResult = from <= today && today <= to
           ? pacing(
-              currentRows,
+              await repos.transactions.findByDateRange(userId, `${today.slice(0, 7)}-01`, today),
               await repos.budgets.findByUserAndMonth(userId, wibYear(), wibMonth()),
               today,
             )

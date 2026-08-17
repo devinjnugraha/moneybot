@@ -158,4 +158,71 @@ describe('buildTools — get_analytics pacing', () => {
     ) as AnalyticsResult;
     expect(out.pacing).toBeUndefined();
   });
+
+  const B1_ROW = {
+    budgetCodeId: 'b1', userId: 'u', name: 'makan', monthlyBudget: 1_000_000,
+    month: 8, year: 2026, spent: 0, isRecurring: false, createdAt: '', updatedAt: '',
+  };
+
+  it('wide range spanning months: pacing counts only the current month', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z')); // WIB 2026-08-16
+    try {
+      const repos = mockRepos({
+        txns: [
+          mkTxn({ date: '2026-07-15', amount: 900_000, budgetCodeId: 'b1' }), // July — must not count
+          mkTxn({ date: '2026-08-10', amount: 600_000, budgetCodeId: 'b1' }),
+        ],
+      });
+      (repos.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>).mockResolvedValue([B1_ROW]);
+      const { get_analytics } = buildTools({ userId: 'u1', repos, hasAccount: true });
+      const out = await get_analytics!.execute!(
+        { from: '2026-07-01', to: '2026-09-30' }, // Q3-style wide range covering today
+        { toolCallId: 'c', messages: [] as never },
+      ) as AnalyticsResult;
+      expect(out.pacing).toBeDefined();
+      expect(out.pacing!.items[0]!.spent).toBe(600_000);   // not 1_500_000
+      expect(out.currentTotal).toBe(1_500_000);            // groups still span the full range
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('range starting mid-month: pacing still reads the month from day 1', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z'));
+    try {
+      const repos = mockRepos({ txns: [mkTxn({ date: '2026-08-05', amount: 600_000, budgetCodeId: 'b1' })] });
+      (repos.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>).mockResolvedValue([B1_ROW]);
+      const { get_analytics } = buildTools({ userId: 'u1', repos, hasAccount: true });
+      const out = await get_analytics!.execute!(
+        { from: '2026-08-10', to: '2026-08-31' }, // covers today, excludes Aug 1–9
+        { toolCallId: 'c', messages: [] as never },
+      ) as AnalyticsResult;
+      expect(out.pacing).toBeDefined();
+      expect(out.pacing!.items[0]!.spent).toBe(600_000);   // currentRows would give 0
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drill-down: pacing keeps full-month spend for every budget', async () => {
+    vi.setSystemTime(new Date('2026-08-16T03:00:00Z'));
+    try {
+      const repos = mockRepos({
+        txns: [
+          mkTxn({ date: '2026-08-05', categoryId: 'food.coffee', amount: 50_000, budgetCodeId: 'b1' }),
+          mkTxn({ date: '2026-08-06', categoryId: 'transport.fuel', amount: 600_000, budgetCodeId: 'b1' }),
+        ],
+      });
+      (repos.budgets.findByUserAndMonth as ReturnType<typeof vi.fn>).mockResolvedValue([B1_ROW]);
+      const { get_analytics } = buildTools({ userId: 'u1', repos, hasAccount: true });
+      const out = await get_analytics!.execute!(
+        { from: '2026-08-01', to: '2026-08-31', categoryId: 'food.coffee' },
+        { toolCallId: 'c', messages: [] as never },
+      ) as AnalyticsResult;
+      expect(out.currentTotal).toBe(50_000);              // groups stay drilled
+      expect(out.pacing!.items[0]!.spent).toBe(650_000);  // pacing sees both budgets' spend
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
