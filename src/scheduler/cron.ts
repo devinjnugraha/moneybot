@@ -14,6 +14,8 @@ import { createLoggingGapDetector } from '../proactive/triggers/logging-gap.js';
 import { createAnomalyDetector } from '../proactive/triggers/anomaly.js';
 import { detectLeakAlert } from '../proactive/triggers/leak-alert.js';
 import { createLeakAlertComposer } from '../proactive/composers/leak-alert.js';
+import { detectHealthDigest } from '../proactive/triggers/health-digest.js';
+import { createHealthDigestComposer } from '../proactive/composers/health-digest.js';
 import { markdownToTelegramHTML } from '../telegram/formatter.js';
 import { bot } from '../telegram/bot.js';
 import { config } from '../config/index.js';
@@ -108,7 +110,17 @@ export function startCronJobs(repos: Repos, model: LanguageModel): void {
     }).catch((err) => logEvent('error', 'proactive leak alert error', { error: (err as Error).message }));
   }, { timezone: 'Asia/Jakarta' });
 
+  // Proactive outreach — monthly health digest, 1st of month 08:35 WIB (advisory
+  // spec §4.2): judges the month that just ended.
+  cron.schedule(config.PROACTIVE_HEALTH_DIGEST_CRON, () => {
+    runProactivePass({
+      detector: detectHealthDigest,
+      composer: createHealthDigestComposer(model),
+      repos, policy, now: new Date(), send,
+    }).catch((err) => logEvent('error', 'proactive health digest error', { error: (err as Error).message }));
+  }, { timezone: 'Asia/Jakarta' });
+
   logEvent('info', 'cron jobs registered', {
-    schedules: ['*/5 * * * *', config.BUDGET_ROLLOVER_CRON, config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON, config.PROACTIVE_LEAK_CRON],
+    schedules: ['*/5 * * * *', config.BUDGET_ROLLOVER_CRON, config.PROACTIVE_MORNING_GLANCE_CRON, config.PROACTIVE_SUMMARY_CRON, config.PROACTIVE_SWEEP_CRON, config.PROACTIVE_ANOMALY_CRON, config.PROACTIVE_LEAK_CRON, config.PROACTIVE_HEALTH_DIGEST_CRON],
   });
 }

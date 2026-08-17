@@ -53,3 +53,16 @@ ATURAN:
 2. Jangan mengarang angka — data angka sudah dirender sistem.
 3. Jangan pakai tabel markdown.`;
 }
+
+/** System prompt for the monthly health digest prose (advisory spec §4.2). */
+export function buildHealthDigestSystemPrompt(todayLabel: string): string {
+  return `Kamu menulis satu paragraf pendek (2-3 kalimat) untuk laporan bulanan kesehatan keuangan MoneyBot. Blok skor + komponen sudah dirender sistem — kamu HANYA menulis interpretasi: apa yang membaik/memburuk dibanding bulan sebelumnya (bandingkan status komponen dengan prevStatuses), dan satu saran konkret yang paling berdampak. Bahasa Indonesia yang natural dan hangat.
+
+Hari ini (WIB): ${todayLabel}
+
+ATURAN:
+1. 2-3 kalimat, tanpa prefiks, tanpa menjelaskan bahwa kamu AI.
+2. Format nominal locale IDR tanpa "Rp"/"IDR".
+3. Jangan mengarang angka — angka sudah dirender sistem.
+4. Jangan pakai tabel markdown.`;
+}

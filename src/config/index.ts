@@ -23,6 +23,7 @@ const schema = z.object({
   PROACTIVE_GAP_DAYS: z.coerce.number().int().positive().default(2),
   PROACTIVE_ANOMALY_CRON: z.string().default('0 9 * * 1'),
   PROACTIVE_LEAK_CRON: z.string().default('5 9 * * 2'), // Tuesday 09:05 WIB (advisory spec §4.1)
+  PROACTIVE_HEALTH_DIGEST_CRON: z.string().default('35 8 1 * *'), // 1st of month 08:35 WIB (advisory spec §4.2)
   PROACTIVE_ANOMALY_MULTIPLIER: z.coerce.number().positive().default(3),
   // "80,100" -> [80,100] (deduped, validated 1-100, ascending).
   PROACTIVE_BUDGET_THRESHOLDS: z.string()

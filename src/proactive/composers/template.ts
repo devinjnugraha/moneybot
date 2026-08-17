@@ -303,6 +303,38 @@ export function leakAlertTemplate (payload: ProactivePayload): string {
   return leakAlertBlock(payload)
 }
 
+interface HealthDigestData {
+  month: string // 'YYYY-MM'
+  score?: number
+  components: { key: string; label: string; display: string; status: string }[]
+  prevScore?: number
+}
+
+const MONTH_NAMES_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
+
+function monthLabelId (month: string): string {
+  const m = Number(month.slice(5, 7))
+  return `${MONTH_NAMES_ID[m - 1] ?? month} ${month.slice(0, 4)}`
+}
+
+const HEALTH_STATUS_ICON: Record<string, string> = { good: '✅', warn: '⚠️', bad: '🚨', insufficient_data: '❔', not_applicable: '➖' }
+
+/** Deterministic block for the monthly health digest (advisory spec §4.2). */
+export function healthDigestBlock (payload: ProactivePayload): string {
+  const d = payload.data as unknown as HealthDigestData
+  const lines: string[] = []
+  lines.push(d.score != null
+    ? `🩺 Skor keuangan ${monthLabelId(d.month)}: ${d.score}/100`
+    : `🩺 Skor keuangan ${monthLabelId(d.month)}: belum bisa dinilai (data kurang)`)
+  for (const c of d.components)
+    lines.push(`${HEALTH_STATUS_ICON[c.status] ?? '❔'} ${c.label}: ${c.display}`)
+  return lines.join('\n')
+}
+
+export function healthDigestTemplate (payload: ProactivePayload): string {
+  return healthDigestBlock(payload)
+}
+
 /** Dispatch a template-channel payload to its formatter. */
 export function templateCompose (payload: ProactivePayload): string {
   switch (payload.triggerType) {
@@ -318,6 +350,8 @@ export function templateCompose (payload: ProactivePayload): string {
       return morningGlanceTemplate(payload)
     case 'leak_alert':
       return leakAlertTemplate(payload)
+    case 'health_digest':
+      return healthDigestTemplate(payload)
     default:
       return '(tidak ada pesan)'
   }
