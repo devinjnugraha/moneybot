@@ -1,4 +1,5 @@
 import { todayWIB, addDays, wibYear, wibMonth } from '../../domain/time.js';
+import { pacing } from '../../domain/analytics/pacing.js';
 import type { Detector, ProactivePayload } from '../types.js';
 
 interface DueBill { recurringId: string; name: string; amount: number; account: string }
@@ -56,7 +57,8 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
 
   // Current-month budgets: spent vs remaining + pct, sorted most-used first.
   // Zero-alloc codes carry no meaningful fraction, so they are filtered out.
-  const budgets = (await repos.budgets.findByUserAndMonth(userId, year, month))
+  const budgetRows = await repos.budgets.findByUserAndMonth(userId, year, month);
+  const budgets = budgetRows
     .filter((c) => c.monthlyBudget > 0)
     .map((c) => {
       const alloc = c.monthlyBudget;
@@ -70,6 +72,19 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
       };
     })
     .sort((a, b) => b.pct - a.pct);
+
+  // Pacing (advisory design §4/slice 2): tight/over_pace projections, cap 3,
+  // over_pace first — the glance already shows spent; this shows where it's heading.
+  // `tx` is the month-to-date range so pacing's `spent` derives from actual rows.
+  const pacingItems = pacing(
+    await repos.transactions.findByDateRange(userId, `${year}-${String(month).padStart(2, '0')}-01`, today),
+    budgetRows,
+    today,
+  ).items
+    .filter((p) => p.verdict !== 'on_track')
+    .sort((a, b) => (a.verdict === b.verdict ? b.projected - a.projected : a.verdict === 'over_pace' ? -1 : 1))
+    .slice(0, 3)
+    .map((p) => ({ name: p.name, projected: p.projected, alloc: p.alloc, verdict: p.verdict }));
 
   // Card statements: unpaid, due within 7 days or overdue (FIFO-derived figures).
   interface CardDue { account: string; cycleEnd: string; dueDate: string; remainingDue: number; overdue: boolean }
@@ -88,7 +103,7 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
     triggerType: 'morning_glance',
     dedupKey: `morning-glance:${today}`,
     channel: 'llm',
-    data: { balances, upcoming, yesterday, todayDueBills, budgets, cardDue },
+    data: { balances, upcoming, yesterday, todayDueBills, budgets, cardDue, ...(pacingItems.length ? { pacing: pacingItems } : {}) },
   };
   return [payload];
 };

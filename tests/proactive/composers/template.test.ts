@@ -373,3 +373,47 @@ describe('renderCardBills', () => {
     expect(block).toContain('💳 Tagihan kartu');
   });
 });
+
+describe('renderMorningGlanceBlock — pacing', () => {
+  it('renders a pacing line per tight/over_pace budget', () => {
+    const text = renderMorningGlanceBlock({
+      triggerType: 'morning_glance',
+      dedupKey: 'k',
+      channel: 'llm',
+      data: {
+        balances: [], upcoming: [], yesterday: null, todayDueBills: [], budgets: [], cardDue: [],
+        pacing: [
+          { name: 'makan', projected: 1_162_500, alloc: 1_000_000, verdict: 'tight' },
+          { name: 'jajan', projected: 900_000, alloc: 500_000, verdict: 'over_pace' },
+        ],
+      },
+    });
+    expect(text).toContain('⚠️ makan: proyeksi 1.162.500 / 1.000.000');
+    expect(text).toContain('🚨 jajan: proyeksi 900.000 / 500.000');
+  });
+
+  it('no pacing data → no pacing line', () => {
+    const text = renderMorningGlanceBlock({
+      triggerType: 'morning_glance', dedupKey: 'k', channel: 'llm',
+      data: { balances: [], upcoming: [], yesterday: null, todayDueBills: [], budgets: [], cardDue: [] },
+    });
+    expect(text).not.toContain('proyeksi');
+  });
+
+  it('places the pacing section after budgets and before upcoming bills', () => {
+    const text = renderMorningGlanceBlock({
+      triggerType: 'morning_glance',
+      dedupKey: 'k',
+      channel: 'llm',
+      data: {
+        balances: [{ name: 'BCA', balance: 1_000_000 }],
+        budgets: [{ name: 'Makan', spent: 50, alloc: 100, remaining: 50, pct: 0.5 }],
+        pacing: [{ name: 'makan', projected: 1_162_500, alloc: 1_000_000, verdict: 'tight' }],
+        upcoming: [{ name: 'Spotify', amount: 59_900, account: 'BCA CC', dueDate: '2026-06-25' }],
+        yesterday: null, todayDueBills: [], cardDue: [],
+      },
+    });
+    expect(text.indexOf('📊 Budget')).toBeLessThan(text.indexOf('Proyeksi bulan ini:'));
+    expect(text.indexOf('Proyeksi bulan ini:')).toBeLessThan(text.indexOf('📅 Tagihan minggu ini'));
+  });
+});

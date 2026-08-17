@@ -54,6 +54,23 @@ export function renderBudgetBlock (budgets: readonly MGBudget[]): string {
   return `📊 Budget\n${lines.join('\n')}`
 }
 
+interface MGPacing {
+  name: string
+  projected: number
+  alloc: number
+  verdict: 'tight' | 'over_pace'
+}
+
+/** Render month-end pacing projections (tight/over_pace only). '' when empty. */
+export function renderPacing (pacing: readonly MGPacing[]): string {
+  if (pacing.length === 0) return ''
+  const lines = pacing.map(p => {
+    const icon = p.verdict === 'over_pace' ? '🚨' : '⚠️'
+    return `${icon} ${p.name}: proyeksi ${idr(p.projected)} / ${idr(p.alloc)}`
+  })
+  return `Proyeksi bulan ini:\n${lines.join('\n')}`
+}
+
 interface MGUpcoming {
   name: string
   amount: number
@@ -120,6 +137,7 @@ export function renderMorningGlanceBlock (payload: ProactivePayload): string {
   const d = payload.data as {
     balances?: MGAccount[]
     budgets?: MGBudget[]
+    pacing?: MGPacing[]
     upcoming?: MGUpcoming[]
     todayDueBills?: MGDue[]
     cardDue?: MGCardDue[]
@@ -127,6 +145,7 @@ export function renderMorningGlanceBlock (payload: ProactivePayload): string {
   return [
     renderAccountList(d.balances ?? []),
     renderBudgetBlock(d.budgets ?? []),
+    renderPacing(d.pacing ?? []),
     renderUpcoming(d.upcoming ?? []),
     renderTodayDue(d.todayDueBills ?? []),
     renderCardBills(d.cardDue ?? [])

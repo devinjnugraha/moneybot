@@ -19,13 +19,16 @@ function mkBudget(over: Partial<BudgetCode>): BudgetCode {
   return { budgetCodeId: 'b', userId: 'u', name: '', monthlyBudget: 0, month: 6, year: 2026, spent: 0, isRecurring: false, createdAt: '', updatedAt: '', ...over };
 }
 
-function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]; yesterday?: Transaction[]; budgets?: BudgetCode[] } = {}): Repos {
+function mockRepos(opts: { accounts?: Account[]; recurrings?: RecurringPayment[]; yesterday?: Transaction[]; txns?: Transaction[]; budgets?: BudgetCode[] } = {}): Repos {
   return {
     users: { findByTelegramChatId: vi.fn(), findById: vi.fn(), findAll: vi.fn(), create: vi.fn(), update: vi.fn() } as never,
     accounts: { findAllByUserId: vi.fn(async () => opts.accounts ?? []), findById: vi.fn(), findByName: vi.fn(), create: vi.fn(), updateBalance: vi.fn(), update: vi.fn() } as never,
     transactions: {
       create: vi.fn(), createTransfer: vi.fn(),
-      findByDateRange: vi.fn(async () => opts.yesterday ?? []),
+      // Range-aware like the real repo: serves both the yesterday slice and the
+      // month-to-date fetch pacing consumes.
+      findByDateRange: vi.fn(async (_u: string, from: string, to: string) =>
+        [...(opts.yesterday ?? []), ...(opts.txns ?? [])].filter((t) => t.date >= from && t.date <= to)),
       findByAccountAndDateRange: vi.fn(), findLatestByUserId: vi.fn(), findById: vi.fn(), update: vi.fn(), softDelete: vi.fn(),
     } as never,
     sessions: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } as never,
@@ -136,5 +139,62 @@ describe('detectMorningGlance', () => {
     const data = out[0]!.data as { cardDue: { account: string; remainingDue: number; overdue: boolean }[] };
     expect(data.cardDue).toHaveLength(1);
     expect(data.cardDue[0]).toMatchObject({ account: 'BCA CC', remainingDue: 300_000, overdue: true });
+  });
+
+  it('adds pacing items for tight/over_pace budgets (cap 3, over_pace first)', async () => {
+    // NOW = 2026-06-22 → elapsed 22/30 (≥ 5, so lowConfidence is false and moot).
+    // makan: 900k spent of 1M → projected round(900k/22*30) = 1,227,273 > 1.15M → over_pace.
+    // jajan: 700k of 1M → projected ~954,545 ≤ 1M → on_track (must be excluded).
+    const repos = mockRepos({
+      accounts: [mkAccount({ accountId: 'bca' })],
+      txns: [
+        mkTxn({ type: 'expense', amount: 900_000, budgetCodeId: 'b1', date: '2026-06-20' }),
+        mkTxn({ type: 'expense', amount: 700_000, budgetCodeId: 'b2', date: '2026-06-21' }),
+      ],
+      budgets: [
+        mkBudget({ budgetCodeId: 'b1', name: 'makan', monthlyBudget: 1_000_000 }),
+        mkBudget({ budgetCodeId: 'b2', name: 'jajan', monthlyBudget: 1_000_000 }),
+      ],
+    });
+    const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = payload!.data as { pacing?: { name: string; projected: number; alloc: number; verdict: 'tight' | 'over_pace' }[] };
+    expect(data.pacing).toBeDefined();
+    expect(data.pacing![0]).toMatchObject({ name: 'makan', verdict: 'over_pace', projected: 1_227_273, alloc: 1_000_000 });
+    expect(data.pacing!.map((p) => p.name)).toEqual(['makan']); // on_track 'jajan' excluded
+  });
+
+  it('caps pacing at 3 with over_pace first, then tight by projected desc', async () => {
+    // elapsed 22/30. over: a (spent 900k/1M → 1,227,273 > 1.15M), b (950k/1M → 1,295,455).
+    // tight: c (800k/1M → 1,090,909 ∈ (1M, 1.15M]), d (750k/1M → 1,022,727 tight).
+    // over_pace first (b, a by projected desc), then tight (c, d) — cap 3 keeps b, a, c.
+    const repos = mockRepos({
+      accounts: [mkAccount({ accountId: 'bca' })],
+      txns: [
+        mkTxn({ type: 'expense', amount: 900_000, budgetCodeId: 'b1', date: '2026-06-20' }),
+        mkTxn({ type: 'expense', amount: 950_000, budgetCodeId: 'b2', date: '2026-06-21' }),
+        mkTxn({ type: 'expense', amount: 800_000, budgetCodeId: 'b3', date: '2026-06-21' }),
+        mkTxn({ type: 'expense', amount: 750_000, budgetCodeId: 'b4', date: '2026-06-21' }),
+      ],
+      budgets: [
+        mkBudget({ budgetCodeId: 'b1', name: 'a', monthlyBudget: 1_000_000 }),
+        mkBudget({ budgetCodeId: 'b2', name: 'b', monthlyBudget: 1_000_000 }),
+        mkBudget({ budgetCodeId: 'b3', name: 'c', monthlyBudget: 1_000_000 }),
+        mkBudget({ budgetCodeId: 'b4', name: 'd', monthlyBudget: 1_000_000 }),
+      ],
+    });
+    const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = payload!.data as { pacing?: { name: string; verdict: string }[] };
+    expect(data.pacing!.map((p) => p.name)).toEqual(['b', 'a', 'c']);
+    expect(data.pacing!.every((p) => p.verdict !== 'on_track')).toBe(true);
+  });
+
+  it('omits data.pacing entirely when every budget is on_track', async () => {
+    const repos = mockRepos({
+      accounts: [mkAccount({ accountId: 'bca' })],
+      txns: [mkTxn({ type: 'expense', amount: 300_000, budgetCodeId: 'b1', date: '2026-06-21' })],
+      budgets: [mkBudget({ budgetCodeId: 'b1', name: 'makan', monthlyBudget: 1_000_000 })],
+    });
+    const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    expect((payload!.data as Record<string, unknown>).pacing).toBeUndefined();
   });
 });
