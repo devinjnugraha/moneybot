@@ -8,7 +8,7 @@ Personal-finance LLM agent on Telegram (Bahasa Indonesia). TypeScript/Node, gram
 
 ## ⚠️ Active work in progress
 
-Advisory layer (analytics + financial health) built on branch `feat/advisory-layer` per `docs/superpowers/plans/2026-08-16-advisory-layer.md` — all 13 tasks implemented; pending merge.
+Budget removal (`delete_budget_code`, stop-going-forward semantics) shipped on `master` per `docs/superpowers/plans/2026-08-18-budget-removal.md`. The advisory layer (`docs/superpowers/plans/2026-08-16-advisory-layer.md`) is also merged into `master` — its local `feat/advisory-layer` branch is stale and can be deleted.
 
 ## Architecture seams (hard rules)
 
