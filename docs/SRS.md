@@ -481,6 +481,10 @@ interface IBudgetCodeRepository {
     create(input: CreateBudgetCodeInput): Promise<BudgetCode>;
     incrementSpent(userId: string, budgetCodeId: string, delta: number): Promise<void>;
     update(userId: string, budgetCodeId: string, patch: Partial<BudgetCode>): Promise<BudgetCode>;
+    /** Hard-delete one row; clears is_recurring on all same-name rows first so
+        the daily roll-over sweep cannot resurrect it. Prior months survive. */
+    delete(userId: string, budgetCodeId: string, name: string): Promise<{ stoppedRecurring: boolean }>;
+    rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number>;
 }
 
 interface IRecurringPaymentRepository {
@@ -582,6 +586,8 @@ All tools registered in `/src/tools/index.ts` with full JSON Schema definitions 
 | T14     | `deactivate_recurring_payment` | write | Deactivate (remove) a recurring payment schedule                                   |
 | T15     | `get_report`                   | read  | Generate summary report (period / category / budget code breakdown)                |
 | T16     | `get_account_balance`          | read  | Get current balance for one or all accounts                                        |
+| T17     | `update_budget_code`           | write | Update a budget code's monthly allocation and/or auto-tagging rules (`""` clears rules) |
+| T18     | `delete_budget_code`           | write | Delete a budget code; stops the recurring roll-over chain, keeps transactions       |
 
 ### 8.4 `create_transfer` Implementation Notes
 
@@ -808,6 +814,24 @@ Enforced always:
 - Scoped by `(userId, name, year, month)`. Same name in different month = different record.
 - Agent defaults to current month unless user explicitly specifies another.
 - Querying an upcoming month's budget correctly returns `spent = 0`.
+
+#### FR-06d · Remove Budget Code
+
+**When:** `"hapus budget terea"` / `"stop budget jajan"` / `"budget terea jangan dibuat ulang lagi"`
+
+**Then:**
+
+1. Call `get_budget_codes` for the current month (or the user's stated month), resolve the target by name (case-insensitive) or UUID.
+2. Confirm BEFORE deleting: `"Mau hapus budget 'Terea' — batas 300.000 (bulanan)? (Ya/Tidak)"`
+3. User confirms → call `delete_budget_code`.
+4. Respond: `"✅ Budget 'Terea' dihapus."` plus, when the tool reports `stoppedRecurring`, `"Budget bulanan ini tidak akan dibuat ulang bulan depan."`
+
+Semantics — "stop going forward" (enforced by the repository in one transaction):
+
+- The resolved month's row is hard-deleted.
+- `is_recurring` is cleared on ALL prior-month rows with the same (case-insensitive) name, so the daily roll-over sweep (`sweepBudgetRollover`) can never recreate it — including the edge where the current row was one-time but prior rows were recurring.
+- Prior-month history rows survive with `is_recurring = false` (past analytics / financial-health keep their data).
+- Transactions tagged to the budget are NOT deleted or modified. They keep their (now dangling) `budget_code_id`; budget-grouped reports render them as "Tanpa Budget" (`__none__`).
 
 ---
 
