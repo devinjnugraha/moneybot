@@ -217,4 +217,100 @@ describe('NeonBudgetCodeRepository', () => {
     expect(current[0]!.monthlyBudget).toBe(999_000);
     expect(current[0]!.spent).toBe(50_000);
   });
+
+  it('deletes the current-month row and stops the recurring chain (prior rows survive, unflagged)', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const prev = priorMonth(cur.year, cur.month);
+    await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: prev.month, year: prev.year, isRecurring: true,
+    });
+    const current = await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: cur.month, year: cur.year, isRecurring: true,
+    });
+
+    const res = await budgets.delete(user.userId, current.budgetCodeId, 'Terea');
+    expect(res.stoppedRecurring).toBe(true);
+    expect(await budgets.findByUserAndMonth(user.userId, cur.year, cur.month)).toHaveLength(0);
+
+    // history row survives, but the sweep can no longer resurrect the name
+    const prevRow = await budgets.findByName(user.userId, 'Terea', prev.year, prev.month);
+    expect(prevRow?.isRecurring).toBe(false);
+    expect(await budgets.rollRecurringIntoMonth(user.userId, cur.year, cur.month)).toBe(0);
+  });
+
+  it('stops a recurring chain even when the resolved current row is one-time (sweep-resurrection guard)', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const prev = priorMonth(cur.year, cur.month);
+    await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: prev.month, year: prev.year, isRecurring: true,
+    });
+    const oneTime = await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 999_000, month: cur.month, year: cur.year, isRecurring: false,
+    });
+
+    const res = await budgets.delete(user.userId, oneTime.budgetCodeId, 'Terea');
+    expect(res.stoppedRecurring).toBe(true);
+    expect(await budgets.findByUserAndMonth(user.userId, cur.year, cur.month)).toHaveLength(0);
+    expect(await budgets.rollRecurringIntoMonth(user.userId, cur.year, cur.month)).toBe(0);
+  });
+
+  it('reports stoppedRecurring=false for a pure one-time budget', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const current = await budgets.create({
+      userId: user.userId, name: 'Trip', monthlyBudget: 1_000_000, month: cur.month, year: cur.year, isRecurring: false,
+    });
+
+    const res = await budgets.delete(user.userId, current.budgetCodeId, 'Trip');
+    expect(res.stoppedRecurring).toBe(false);
+    expect(await budgets.findByUserAndMonth(user.userId, cur.year, cur.month)).toHaveLength(0);
+  });
+
+  it('leaves other names and other users untouched on delete', async () => {
+    const userA = await seedUser();
+    const userB = await new NeonUserRepository().create({ telegramChatId: uniqueChatId(), name: 'B' });
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const target = await budgets.create({
+      userId: userA.userId, name: 'Terea', monthlyBudget: 300_000, month: cur.month, year: cur.year, isRecurring: true,
+    });
+    await budgets.create({
+      userId: userA.userId, name: 'Jajan', monthlyBudget: 200_000, month: cur.month, year: cur.year, isRecurring: true,
+    });
+    await budgets.create({
+      userId: userB.userId, name: 'Terea', monthlyBudget: 400_000, month: cur.month, year: cur.year, isRecurring: true,
+    });
+
+    await budgets.delete(userA.userId, target.budgetCodeId, 'Terea');
+
+    const a = await budgets.findByUserAndMonth(userA.userId, cur.year, cur.month);
+    expect(a.map((b) => b.name)).toEqual(['Jajan']);
+    expect(a[0]!.isRecurring).toBe(true);
+    const b = await budgets.findByName(userB.userId, 'Terea', cur.year, cur.month);
+    expect(b?.isRecurring).toBe(true);
+  });
+
+  it('matches the recurring chain case-insensitively across months', async () => {
+    const user = await seedUser();
+    const budgets = new NeonBudgetCodeRepository();
+    const cur = { year: wibYear(), month: wibMonth() };
+    const prev = priorMonth(cur.year, cur.month);
+    // UNIQUE(user_id, name, year, month) is case-sensitive, so both casings can coexist.
+    await budgets.create({
+      userId: user.userId, name: 'terea', monthlyBudget: 300_000, month: prev.month, year: prev.year, isRecurring: true,
+    });
+    const current = await budgets.create({
+      userId: user.userId, name: 'Terea', monthlyBudget: 300_000, month: cur.month, year: cur.year, isRecurring: true,
+    });
+
+    const res = await budgets.delete(user.userId, current.budgetCodeId, 'Terea');
+    expect(res.stoppedRecurring).toBe(true);
+    expect((await budgets.findByName(user.userId, 'terea', prev.year, prev.month))?.isRecurring).toBe(false);
+    expect(await budgets.rollRecurringIntoMonth(user.userId, cur.year, cur.month)).toBe(0);
+  });
 });

@@ -121,6 +121,16 @@ export interface IBudgetCodeRepository {
   incrementSpent(userId: string, budgetCodeId: string, delta: number): Promise<void>;
   update(userId: string, budgetCodeId: string, patch: Partial<BudgetCode>): Promise<BudgetCode>;
   /**
+   * Hard-delete one budget row and stop the name's recurring chain going
+   * forward. Single transaction: FIRST clears is_recurring on every
+   * (case-insensitive) same-name row for the user — so the daily
+   * rollRecurringIntoMonth sweep can never resurrect the name — THEN deletes
+   * the row. Prior-month history rows survive with is_recurring=false (past
+   * analytics keep their data). Returns stoppedRecurring=true when any
+   * same-name row was recurring before the flip.
+   */
+  delete(userId: string, budgetCodeId: string, name: string): Promise<{ stoppedRecurring: boolean }>;
+  /**
    * Create current-month copies of the user's recurring budgets that don't yet
    * exist for (year, month). Copies name + the most-recent prior allocation
    * and its rules, resets spent to 0, sets is_recurring=true, and links

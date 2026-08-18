@@ -56,6 +56,36 @@ export class NeonBudgetCodeRepository implements IBudgetCodeRepository {
     return mapBudgetCode(rows[0] as Record<string, unknown>);
   }
 
+  async delete(userId: string, budgetCodeId: string, name: string): Promise<{ stoppedRecurring: boolean }> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Flip FIRST, inside the same tx as the DELETE: once no same-name row has
+      // is_recurring=true, the daily sweep cannot recreate the budget. LOWER()
+      // is a deliberate superset of the sweep's exact-name match —
+      // UNIQUE(user_id, name, year, month) is case-sensitive, so differently
+      // cased rows of the "same" budget can coexist across months.
+      const flip = await client.query(
+        `UPDATE budget_codes
+         SET is_recurring = false, updated_at = NOW()
+         WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND is_recurring = true`,
+        [userId, name],
+      );
+      const del = await client.query(
+        'DELETE FROM budget_codes WHERE user_id = $1 AND budget_code_id = $2',
+        [userId, budgetCodeId],
+      );
+      if ((del.rowCount ?? 0) === 0) throw new Error(`budget_code ${budgetCodeId} not found for user`);
+      await client.query('COMMIT');
+      return { stoppedRecurring: (flip.rowCount ?? 0) > 0 };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async rollRecurringIntoMonth(userId: string, year: number, month: number): Promise<number> {
     const result = await pool.query(
       `INSERT INTO budget_codes (user_id, name, monthly_budget, month, year, is_recurring, spent, old_budget_id, rules)
