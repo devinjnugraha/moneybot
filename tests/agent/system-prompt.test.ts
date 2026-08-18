@@ -203,6 +203,19 @@ describe('buildSystemPrompt — budget rules guidance', () => {
   });
 });
 
+describe('buildSystemPrompt — budget deletion rules', () => {
+  const prompt = buildSystemPrompt('2026-08-18');
+
+  it('mandates Ya/Tidak confirmation before delete_budget_code', () => {
+    expect(prompt).toContain('delete_budget_code');
+    expect(prompt).toMatch(/Ya\/Tidak/);
+  });
+
+  it('tells the model transactions survive budget deletion', () => {
+    expect(prompt).toMatch(/TIDAK menghapus transaksi/i);
+  });
+});
+
 describe('buildSystemPrompt — card billing rules', () => {
   const prompt = buildSystemPrompt('2026-07-26');
 
