@@ -31,6 +31,7 @@ function mockRepos(overrides: Partial<Repos> = {}): Repos {
       create: vi.fn(),
       incrementSpent: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     } as never,
     recurrings: {
       findAllByUserId: vi.fn(),
@@ -877,6 +878,78 @@ describe('buildTools — update_budget_code', () => {
     const { update_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
     const res = await callExec(update_budget_code, { budgetCodeId: 'terea', rules: 'x' });
     expect(res).toEqual({ status: 'error', message: 'Gagal memperbarui budget code. Coba lagi.' });
+  });
+});
+
+describe('buildTools — delete_budget_code', () => {
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  const terea = {
+    budgetCodeId: uuid, userId: 'u1', name: 'Terea', monthlyBudget: 300_000,
+    month: 6, year: 2026, spent: 120_000, isRecurring: true, createdAt: '', updatedAt: '',
+  };
+
+  function deleteRepos(codes: unknown[] = [terea]) {
+    return mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => codes),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(async () => ({ stoppedRecurring: true })),
+      } as never,
+    });
+  }
+
+  it('resolves by name (case-insensitive) and forwards id + name to delete', async () => {
+    const repos = deleteRepos();
+    const { delete_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(delete_budget_code, { budgetCodeId: 'terea' });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.delete).toHaveBeenCalledWith('u1', uuid, 'Terea');
+    const data = res.data as unknown as { name: string; stoppedRecurring: boolean };
+    expect(data.name).toBe('Terea');
+    expect(data.stoppedRecurring).toBe(true);
+  });
+
+  it('resolves by UUID', async () => {
+    const repos = deleteRepos();
+    const { delete_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(delete_budget_code, { budgetCodeId: uuid });
+    expect(res.status).toBe('ok');
+    expect(repos.budgets.delete).toHaveBeenCalledWith('u1', uuid, 'Terea');
+  });
+
+  it('returns missing_fields with the available budgets when the name is unknown', async () => {
+    const repos = deleteRepos();
+    const { delete_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(delete_budget_code, { budgetCodeId: 'nonexistent' });
+    expect(res.status).toBe('missing_fields');
+    expect(res.missing).toContain('budgetCodeId');
+    const opts = res.options as { budgets: Array<{ budgetCodeId: string; name: string }> };
+    expect(opts.budgets[0]!.name).toBe('Terea');
+    expect(repos.budgets.delete).not.toHaveBeenCalled();
+  });
+
+  it('returns error when the repository throws', async () => {
+    const repos = mockRepos({
+      budgets: {
+        findByUserAndMonth: vi.fn(async () => [terea]),
+        findByName: vi.fn(),
+        create: vi.fn(),
+        incrementSpent: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(async () => { throw new Error('db down'); }),
+      } as never,
+    });
+    const { delete_budget_code } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(delete_budget_code, { budgetCodeId: 'terea' });
+    expect(res).toEqual({ status: 'error', message: 'Gagal menghapus budget code. Coba lagi.' });
+  });
+
+  it('is withheld until onboarding (hasAccount=false)', () => {
+    const tools = buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: false });
+    expect(tools.delete_budget_code).toBeUndefined();
   });
 });
 

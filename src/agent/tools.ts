@@ -1171,6 +1171,44 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     },
   });
 
+  tools.delete_budget_code = tool({
+    description:
+      'Hapus budget code (default bulan ini; budgetCodeId bisa nama budget (mis. "terea") atau UUID). ' +
+      'Konfirmasi dulu (Ya/Tidak) sebelum memanggil tool ini. ' +
+      'Budget bulanan otomatis berhenti dibuat ulang bulan depan; transaksi yang sudah dicatat TIDAK ikut terhapus.',
+    parameters: z.object({
+      budgetCodeId: z.string().describe('Nama budget atau budgetCodeId. Resolve via blok BUDGET CODE BULAN INI / get_budget_codes.'),
+      month: z.number().int().min(1).max(12).optional(),
+      year: z.number().int().positive().optional(),
+    }),
+    execute: async ({ budgetCodeId, month, year }) => {
+      try {
+        const m = month ?? wibMonth();
+        const y = year ?? wibYear();
+        const codes = await repos.budgets.findByUserAndMonth(userId, y, m);
+        // Names are UNIQUE per (user, name, year, month), so a name match is
+        // unambiguous within the month; UUIDs match exactly one row.
+        const isUuid = /^[0-9a-f-]{36}$/.test(budgetCodeId);
+        const needle = budgetCodeId.trim().toLowerCase();
+        const target = codes.find((c) =>
+          isUuid ? c.budgetCodeId.toLowerCase() === needle : c.name.toLowerCase() === needle,
+        );
+        if (!target) {
+          return {
+            status: 'missing_fields',
+            missing: ['budgetCodeId'],
+            options: { budgets: codes.map((c) => ({ budgetCodeId: c.budgetCodeId, name: c.name })) },
+          };
+        }
+        const { stoppedRecurring } = await repos.budgets.delete(userId, target.budgetCodeId, target.name);
+        return { status: 'ok', data: { ...target, stoppedRecurring } };
+      } catch (e) {
+        logEvent('error', 'delete_budget_code failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal menghapus budget code. Coba lagi.' };
+      }
+    },
+  });
+
   tools.create_recurring_payment = tool({
     description: 'Buat jadwal pembayaran berulang bulanan. nextFireAt dihitung otomatis dari dayOfMonth.',
     parameters: z.object({
