@@ -8,7 +8,7 @@ vi.mock('../../src/utils/logger.js', () => ({ logEvent: vi.fn() }));
 function mkUser(id: string): User {
   return {
     userId: id, telegramChatId: `c-${id}`, name: 'U', language: 'id', timezone: 'Asia/Jakarta',
-    status: 'approved', createdAt: '', updatedAt: '',
+    accountsEnabled: true, status: 'approved', createdAt: '', updatedAt: '',
   };
 }
 

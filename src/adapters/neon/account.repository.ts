@@ -73,4 +73,27 @@ export class NeonAccountRepository implements IAccountRepository {
     );
     return mapAccount(rows[0] as Record<string, unknown>);
   }
+
+  async ensureDefaultAccount(userId: string): Promise<Account> {
+    // ON CONFLICT against the partial unique index (user_id WHERE is_default):
+    // creates "Dompet" on first call, reactivates it if a prior accounts-mode
+    // stretch deactivated it. Never renames or rebalances an existing default.
+    const { rows } = await pool.query(
+      `INSERT INTO accounts (user_id, name, type, is_default)
+       VALUES ($1, 'Dompet', 'cash', true)
+       ON CONFLICT (user_id) WHERE is_default
+       DO UPDATE SET is_active = true, updated_at = NOW()
+       RETURNING *`,
+      [userId],
+    );
+    return mapAccount(rows[0] as Record<string, unknown>);
+  }
+
+  async findDefault(userId: string): Promise<Account | null> {
+    const { rows } = await pool.query(
+      'SELECT * FROM accounts WHERE user_id = $1 AND is_default = true',
+      [userId],
+    );
+    return rows[0] ? mapAccount(rows[0] as Record<string, unknown>) : null;
+  }
 }

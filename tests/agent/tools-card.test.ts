@@ -10,13 +10,13 @@ function card(over: Partial<Account> = {}): Account {
   return {
     accountId: 'card1', userId: 'u', name: 'BCA CC', type: 'card',
     balance: -300_000, creditLimit: 5_000_000, billingDay: 5, dueInDays: 15,
-    isActive: true, createdAt: '', updatedAt: '', ...over,
+    isDefault: false, isActive: true, createdAt: '', updatedAt: '', ...over,
   };
 }
 function fund(): Account {
   return {
     accountId: 'bank1', userId: 'u', name: 'BCA', type: 'bank',
-    balance: 1_000_000, isActive: true, createdAt: '', updatedAt: '',
+    balance: 1_000_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '',
   };
 }
 

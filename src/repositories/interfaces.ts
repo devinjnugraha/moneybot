@@ -87,6 +87,8 @@ export interface IUserRepository {
   findAll(): Promise<User[]>;
   create(input: CreateUserInput): Promise<User>;
   update(userId: string, patch: Partial<User>): Promise<User>;
+  /** Flip the accounts-mode flag (FR-11). No other effects — balances never move here. */
+  setAccountsEnabled(userId: string, enabled: boolean): Promise<void>;
 }
 
 export interface IAccountRepository {
@@ -96,6 +98,13 @@ export interface IAccountRepository {
   create(input: CreateAccountInput): Promise<Account>;
   updateBalance(userId: string, accountId: string, delta: number): Promise<void>;
   update(userId: string, accountId: string, patch: Partial<Account>): Promise<Account>;
+  /**
+   * Get-or-create the user's default "Dompet" account (simple-mode container,
+   * FR-11); reactivates it if inactive. Idempotent — safe to call repeatedly.
+   */
+  ensureDefaultAccount(userId: string): Promise<Account>;
+  /** The user's default account regardless of is_active (the FR-11b gate reads a deactivated Dompet); null when none exists. */
+  findDefault(userId: string): Promise<Account | null>;
 }
 
 export interface ITransactionRepository {

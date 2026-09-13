@@ -44,7 +44,7 @@ describe('enrichSystemPrompt', () => {
   const pref: UserPreference = { userId: 'u1', key: 'default_account', value: 'BCA', updatedAt: '' };
   const account: Account = {
     accountId: 'acct-1', userId: 'u1', name: 'BCA', type: 'bank',
-    balance: 1234567, isActive: true, createdAt: '', updatedAt: '',
+    balance: 1234567, isDefault: false, isActive: true, createdAt: '', updatedAt: '',
   };
   const budget: BudgetCode = {
     budgetCodeId: 'bc-1', userId: 'u1', name: 'Raissa', monthlyBudget: 800000,

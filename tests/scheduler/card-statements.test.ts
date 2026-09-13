@@ -6,10 +6,10 @@ import type { Account, User } from '../../src/domain/entities.js';
 vi.mock('../../src/utils/logger.js', () => ({ logEvent: vi.fn() }));
 
 function mkUser(id: string): User {
-  return { userId: id, telegramChatId: `c-${id}`, name: 'U', language: 'id', timezone: 'Asia/Jakarta', status: 'approved', createdAt: '2026-01-01', updatedAt: '' };
+  return { userId: id, telegramChatId: `c-${id}`, name: 'U', language: 'id', timezone: 'Asia/Jakarta', accountsEnabled: true, status: 'approved', createdAt: '2026-01-01', updatedAt: '' };
 }
 function mkCard(over: Partial<Account>): Account {
-  return { accountId: 'card', userId: 'u', name: 'CC', type: 'card', balance: 0, billingDay: 5, dueInDays: 15, isActive: true, createdAt: '2026-01-01', updatedAt: '', ...over };
+  return { accountId: 'card', userId: 'u', name: 'CC', type: 'card', balance: 0, billingDay: 5, dueInDays: 15, isDefault: false, isActive: true, createdAt: '2026-01-01', updatedAt: '', ...over };
 }
 
 function mockRepos(opts: { users: User[]; cards: Account[]; ensure: ReturnType<typeof vi.fn> }): Repos {

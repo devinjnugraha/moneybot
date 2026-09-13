@@ -7,7 +7,7 @@ import type { Account, BudgetCode, RecurringPayment, Transaction } from '../../.
 const NOW = new Date('2026-06-22T14:00:00Z');
 
 function mkAccount(over: Partial<Account>): Account {
-  return { accountId: 'a', userId: 'u', name: '', type: 'bank', balance: 0, isActive: true, createdAt: '', updatedAt: '', ...over };
+  return { accountId: 'a', userId: 'u', name: '', type: 'bank', balance: 0, isDefault: false, isActive: true, createdAt: '', updatedAt: '', ...over };
 }
 function mkRecurring(over: Partial<RecurringPayment>): RecurringPayment {
   return { recurringId: 'r', userId: 'u', name: '', amount: 0, accountId: 'a', categoryId: 'c', dayOfMonth: 1, isActive: true, nextFireAt: '2026-06-22', createdAt: '', updatedAt: '', ...over };
@@ -131,7 +131,7 @@ describe('detectMorningGlance', () => {
   it('surfaces unpaid card statements due within 7 days or overdue as cardDue', async () => {
     const due = { statementId: 's', userId: 'u', accountId: 'cc', cycleStart: '', cycleEnd: '2026-07-05', createdAt: '', updatedAt: '', newCharges: 300_000, amountPaid: 0, remainingDue: 300_000, status: 'open', dueDate: '2026-06-25', overdue: true };
     // mkAccount doesn't model card billing fields, so use a card literal.
-    const card: Account = { accountId: 'cc', userId: 'u', name: 'BCA CC', type: 'card', balance: -300_000, creditLimit: 5_000_000, billingDay: 5, dueInDays: 15, isActive: true, createdAt: '', updatedAt: '' };
+    const card: Account = { accountId: 'cc', userId: 'u', name: 'BCA CC', type: 'card', balance: -300_000, creditLimit: 5_000_000, billingDay: 5, dueInDays: 15, isDefault: false, isActive: true, createdAt: '', updatedAt: '' };
     const repos = mockRepos({ accounts: [card] });
     ;(repos.cardStatements as { getWithFigures: (u: string, a: string, t?: Date) => Promise<unknown[]> }).getWithFigures =
       vi.fn(async () => [due]);

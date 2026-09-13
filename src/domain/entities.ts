@@ -11,6 +11,7 @@ export interface User {
   name: string;
   language: 'id' | 'en';
   timezone: string;
+  accountsEnabled: boolean; // false = simple mode (FR-11): no per-account tracking
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
@@ -25,6 +26,7 @@ export interface Account {
   creditLimit?: number;
   billingDay?: number;  // 1–31, statement cut day; only meaningful for cards
   dueInDays?: number;   // grace period; default 15
+  isDefault: boolean;   // true only for the per-user "Dompet" container (FR-11)
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

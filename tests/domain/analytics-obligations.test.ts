@@ -3,7 +3,7 @@ import { obligations } from '../../src/domain/analytics/obligations.js';
 import type { Account, RecurringPayment } from '../../src/domain/entities.js';
 
 function mkAccount(over: Partial<Account>): Account {
-  return { accountId: 'a', userId: 'u', name: 'acc', type: 'cash', balance: 0, isActive: true, createdAt: '', updatedAt: '', ...over };
+  return { accountId: 'a', userId: 'u', name: 'acc', type: 'cash', balance: 0, isDefault: false, isActive: true, createdAt: '', updatedAt: '', ...over };
 }
 function mkRecurring(over: Partial<RecurringPayment>): RecurringPayment {
   return { recurringId: 'r', userId: 'u', name: 'netflix', amount: 100_000, accountId: 'a', categoryId: 'other.misc', dayOfMonth: 20, isActive: true, nextFireAt: '2026-08-20', createdAt: '', updatedAt: '', ...over };

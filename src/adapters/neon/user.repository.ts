@@ -42,4 +42,11 @@ export class NeonUserRepository implements IUserRepository {
     );
     return mapUser(rows[0] as Record<string, unknown>);
   }
+
+  async setAccountsEnabled(userId: string, enabled: boolean): Promise<void> {
+    await pool.query(
+      'UPDATE users SET accounts_enabled = $2, updated_at = NOW() WHERE user_id = $1',
+      [userId, enabled],
+    );
+  }
 }

@@ -265,7 +265,7 @@ describe('buildTools — get_financial_health', () => {
         mkTxn({ date: '2026-08-05', type: 'income', amount: 5_000_000 }),
         mkTxn({ date: '2026-08-10', amount: 1_000_000, budgetCodeId: 'b1' }),
       ];
-      const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 15_000_000, isActive: true, createdAt: '', updatedAt: '' }];
+      const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 15_000_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '' }];
       const { get_financial_health } = buildTools({ userId: 'u1', repos: healthRepos(txns, { accounts }), hasAccount: true });
       const out = await get_financial_health!.execute!(
         {},
@@ -283,7 +283,7 @@ describe('buildTools — get_financial_health', () => {
 
   it('past month: bill_coverage not_applicable, no obligations fetch needed', async () => {
     const txns: Transaction[] = [mkTxn({ date: '2026-07-10', type: 'income', amount: 5_000_000 }), mkTxn({ date: '2026-07-15', amount: 3_000_000 })];
-    const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 10_000_000, isActive: true, createdAt: '', updatedAt: '' }];
+    const accounts: Account[] = [{ accountId: 'a1', userId: 'u1', name: 'bca', type: 'bank', balance: 10_000_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '' }];
     const { get_financial_health } = buildTools({ userId: 'u1', repos: healthRepos(txns, { accounts }), hasAccount: true });
     const out = await get_financial_health!.execute!(
       { month: '2026-07' },

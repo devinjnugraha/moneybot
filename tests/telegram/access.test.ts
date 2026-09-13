@@ -17,6 +17,7 @@ function user(chatId: string, status: User['status']): User {
     name: 'A',
     language: 'id',
     timezone: 'Asia/Jakarta',
+    accountsEnabled: true,
     status,
     createdAt: '',
     updatedAt: '',
