@@ -23,7 +23,16 @@ export const detectMorningGlance: Detector = async ({ userId, repos, now }) => {
   const accounts = (await repos.accounts.findAllByUserId(userId)).filter((a) => a.isActive);
   if (accounts.length === 0) return []; // onboarding incomplete — nothing to glance at
 
-  const balances = accounts.map((a) => ({ name: a.name, type: a.type, balance: a.balance }));
+  // FR-11: simple mode shows ONE combined line — frozen legacy accounts are
+  // still counted (virtual consolidation), cards excluded from liquid saldo.
+  const user = await repos.users.findById(userId);
+  const balances = user?.accountsEnabled === false
+    ? [{
+        name: 'Dompet',
+        type: 'cash' as const,
+        balance: accounts.filter((a) => a.type !== 'card').reduce((s, a) => s + a.balance, 0),
+      }]
+    : accounts.map((a) => ({ name: a.name, type: a.type, balance: a.balance }));
 
   // Resolve recurring bill account names (cache; active accounts are pre-seeded).
   const accName = new Map<string, string>(accounts.map((a) => [a.accountId, a.name]));

@@ -34,7 +34,7 @@ DATA REFERENSI:
 
 TOOL WRITE GATE:
 Field wajib:
-- create_expense/create_income: description, amount, accountId, categoryId, date.
+- create_expense/create_income: description, amount, categoryId, date; accountId juga wajib KECUALI di mode sederhana (otomatis "Dompet").
 - create_transfer: description, amount, fromAccountId, toAccountId, date.
 - pay_card_bill: cardAccountId, fromAccountId, amount (opsional, kosong = lunas).
 - update/delete/deactivate: target id yang jelas dan field perubahan bila relevan.
@@ -95,7 +95,7 @@ PREFERENSI:
 Jika user menyatakan preferensi yang berguna untuk sesi berikutnya, panggil remember_preference(key, value). Jika user minta melupakan preferensi, panggil forget_preference(key).
 
 USER BARU:
-Jika AKUN USER kosong/tidak ada, tanya nama. Simpan dengan update_profile. Jika user belum mau memberi nama, panggil "Teman". Setelah nama tersimpan, tanya nama dan tipe akun pertama, lalu create_account.
+Jika AKUN USER kosong/tidak ada, tanya nama. Simpan dengan update_profile. Jika user belum mau memberi nama, panggil "Teman". Setelah nama tersimpan, tanya mode pencatatan (jangan menebak): (a) pakai akun terpisah — lanjut minta nama dan tipe akun pertama, lalu create_account; atau (b) mode sederhana — semua dalam satu "Dompet", tanpa perlu menyebut akun, lalu set_accounts_mode(useAccounts=false).
 
 BUDGET:
 - Saat membuat budget code (create_budget_code), WAJIB tanyakan dulu: ini budget **bulanan** (recurring — dibuat ulang otomatis tiap tanggal 1 dengan alokasi yang sama, spent reset) atau **sekali untuk bulan ini**? Teruskan isRecurring=true untuk bulanan, false untuk sekali ini. Jangan menebak — tanya kalau user tidak menyebutkan. (Berlaku juga saat membuat budget baru karena nama belum terdaftar di pesan pengeluaran.)
@@ -103,6 +103,11 @@ BUDGET:
 - Untuk preferensi lain yang menyebut budget (remember_preference), SELALU simpan **nama** budget — nama yang user definisikan dan lihat. Jangan pernah simpan budgetCodeId: id itu internal, jarang dilihat user, dan berganti tiap bulan untuk budget bulanan. Resolve nama→id pakai blok BUDGET CODE BULAN INI saat menulis transaksi.
 - Saat user minta menghapus budget: konfirmasi dulu, mis. "Mau hapus budget 'Terea' — batas 300.000 (bulanan)? (Ya/Tidak)". Baru panggil delete_budget_code setelah user jawab "Ya". Budget bulanan otomatis berhenti dibuat ulang bulan depan.
 - Menghapus budget TIDAK menghapus transaksinya — transaksi yang sudah tercatat tetap ada, hanya tidak di-tag ke budget itu lagi.
+
+MODE AKUN:
+- set_accounts_mode mengubah mode user. WAJIB konfirmasi dulu dengan menjelaskan dampaknya, baru panggil setelah user setuju.
+- Matikan (useAccounts=false) → mode sederhana: transaksi tanpa akun otomatis masuk "Dompet", saldo tampil sebagai satu angka gabungan, akun lama dibekukan (saldo tidak dipindah).
+- Nyalakan (useAccounts=true) → kembali ke mode akun: hanya bisa kalau saldo "Dompet" 0. Kalau tool menolak, bantu user transfer saldo "Dompet" ke akun lain (buat akun baru bila perlu) dulu.
 
 PEMBAYARAN RUTIN:
 Jika user mencatat pengeluaran yang jelas berulang bulanan, setelah transaksi berhasil tawarkan untuk menyimpannya sebagai recurring payment.
@@ -128,6 +133,9 @@ export interface EnrichmentData {
 	preferences?: UserPreference[];
 	accounts?: Account[];
 	budgets?: BudgetCode[];
+	/** FR-11 simple mode. `false` appends the MODE SEDERHANA block (last, so it
+	 *  overrides the account rules above it). Undefined = accounts mode. */
+	accountsEnabled?: boolean;
 }
 
 /**
@@ -164,6 +172,20 @@ export function enrichSystemPrompt(base: string, data: EnrichmentData): string {
 						return `- ${b.budgetCodeId} ${b.name} — batas ${formatIDR(b.monthlyBudget)}${marker}${rule}`;
 					})
 					.join('\n')
+		);
+	}
+
+	// Appended LAST on purpose: it overrides the AKUN USER block above for this
+	// user. Accounts stay listed so explicit name mentions and the re-enable
+	// prep flow (transfer out of "Dompet") can still resolve them.
+	if (data.accountsEnabled === false) {
+		sections.push(
+			'MODE SEDERHANA (aktif untuk user ini — menimpa aturan akun di atas):\n' +
+				'- User TIDAK memakai fitur akun. JANGAN pernah menanya akun saat mencatat transaksi; accountId dikosongkan dan otomatis diisi "Dompet" oleh sistem.\n' +
+				'- Di konfirmasi expense/income/transfer, HAPUS baris akun (dan baris akun sumber→tujuan untuk transfer tidak relevan).\n' +
+				'- Untuk saldo, panggil get_account_balance TANPA accountId — hasilnya sudah digabung (satu angka saldo, plus utang kartu bila ada).\n' +
+				'- Akun lain di blok AKUN USER adalah akun lama yang dibekukan: jangan ditawarkan/disebut, KECUALI user menyebut namanya secara eksplisit (kalau disebut, pakai).\n' +
+				'- Kalau user ingin kembali ke mode akun: saldo "Dompet" harus 0 dulu — bantu transfer keluar (create_transfer dari "Dompet" ke akun lain; buat akun baru bila perlu), lalu set_accounts_mode(useAccounts=true).'
 		);
 	}
 

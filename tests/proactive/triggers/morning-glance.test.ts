@@ -197,4 +197,39 @@ describe('detectMorningGlance', () => {
     const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
     expect((payload!.data as Record<string, unknown>).pacing).toBeUndefined();
   });
+
+  it('renders ONE aggregated balance for simple-mode users (FR-11)', async () => {
+    const repos = mockRepos({
+      accounts: [
+        mkAccount({ accountId: 'bca', name: 'BCA', type: 'bank', balance: 5_000_000 }),
+        mkAccount({ accountId: 'dompet', name: 'Dompet', type: 'cash', balance: 50_000, isDefault: true }),
+        mkAccount({ accountId: 'cc', name: 'CC', type: 'card', balance: -30_000 }),
+      ],
+    });
+    vi.mocked(repos.users.findById).mockResolvedValue({
+      userId: 'u', telegramChatId: 'c', name: 'U', language: 'id', timezone: 'Asia/Jakarta',
+      accountsEnabled: false, status: 'approved', createdAt: '', updatedAt: '',
+    });
+    const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = payload!.data as { balances: { name: string; type: string; balance: number }[] };
+    // frozen legacy accounts still count (virtual consolidation); card debt
+    // stays out of liquid saldo
+    expect(data.balances).toEqual([{ name: 'Dompet', type: 'cash', balance: 5_050_000 }]);
+  });
+
+  it('keeps per-account balances in accounts mode', async () => {
+    const repos = mockRepos({
+      accounts: [
+        mkAccount({ accountId: 'bca', name: 'BCA', type: 'bank', balance: 5_000_000 }),
+        mkAccount({ accountId: 'dompet', name: 'Dompet', type: 'cash', balance: 50_000, isDefault: true }),
+      ],
+    });
+    vi.mocked(repos.users.findById).mockResolvedValue({
+      userId: 'u', telegramChatId: 'c', name: 'U', language: 'id', timezone: 'Asia/Jakarta',
+      accountsEnabled: true, status: 'approved', createdAt: '', updatedAt: '',
+    });
+    const [payload] = await detectMorningGlance({ userId: 'u', repos, now: NOW });
+    const data = payload!.data as { balances: { name: string; balance: number }[] };
+    expect(data.balances).toHaveLength(2);
+  });
 });

@@ -11,7 +11,13 @@ vi.mock('../../src/utils/logger.js', () => ({
 
 function mockRepos(overrides: Partial<Repos> = {}): Repos {
   return {
-    users: { create: vi.fn(async (i: { telegramChatId: string; name: string }) => ({ userId: 'u1', telegramChatId: i.telegramChatId, name: i.name, language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '' })) } as never,
+    users: {
+      create: vi.fn(async (i: { telegramChatId: string; name: string }) => ({ userId: 'u1', telegramChatId: i.telegramChatId, name: i.name, language: 'id' as const, timezone: 'Asia/Jakarta', createdAt: '', updatedAt: '' })),
+      // null = no user row → resolveAccountParam/computeInsightContext treat as
+      // accounts mode (legacy default), matching pre-FR-11 behavior.
+      findById: vi.fn(async () => null),
+      setAccountsEnabled: vi.fn(async () => undefined),
+    } as never,
     accounts: {
       findAllByUserId: vi.fn(async () => []),
       findById: vi.fn(async () => null),
@@ -1601,5 +1607,240 @@ describe('buildTools — insightContext (PROACTIVE_INSIGHT_ENABLED default true)
     expect(res.status).toBe('ok');
     expect(res.data?.insightContext?.balanceAfter).toBe(100_000);
     expect(res.data?.insightContext?.todayCountInCategory).toBe(0);
+  });
+});
+
+describe('buildTools — FR-11 simple-mode account routing', () => {
+  const dompet = { accountId: 'dompet', userId: 'u1', name: 'Dompet', type: 'cash' as const, balance: 50_000, isDefault: true, isActive: true, createdAt: '', updatedAt: '' };
+  const bca = { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 5_000_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '' };
+
+  function userRepo(accountsEnabled: boolean) {
+    return {
+      findByTelegramChatId: vi.fn(),
+      findById: vi.fn(async () => ({ userId: 'u1', telegramChatId: 'c1', name: 'U', language: 'id' as const, timezone: 'Asia/Jakarta', accountsEnabled, status: 'approved' as const, createdAt: '', updatedAt: '' })),
+      findAll: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      setAccountsEnabled: vi.fn(async () => undefined),
+    } as never;
+  }
+  function accountRepo(over: Record<string, unknown> = {}) {
+    return {
+      findAllByUserId: vi.fn(async () => [dompet, bca]),
+      findById: vi.fn(async (_u: string, id: string) => (id === 'a1' ? bca : null)),
+      findByName: vi.fn(async (_u: string, name: string) => (name.toLowerCase() === 'bca' ? bca : null)),
+      findDefault: vi.fn(async () => dompet),
+      ensureDefaultAccount: vi.fn(async () => dompet),
+      create: vi.fn(),
+      updateBalance: vi.fn(async () => undefined),
+      update: vi.fn(),
+      ...over,
+    } as never;
+  }
+
+  it('routes an omitted accountId to the default account in simple mode', async () => {
+    const repos = mockRepos({ users: userRepo(false), accounts: accountRepo() });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, { description: 'bakso', amount: 20_000, categoryId: 'food.dining' });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.create).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'dompet' }));
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'dompet', -20_000);
+    expect(repos.accounts.ensureDefaultAccount).not.toHaveBeenCalled(); // findDefault hit first — no upsert churn
+  });
+
+  it('asks for the account (missing_fields) when omitted in accounts mode', async () => {
+    const repos = mockRepos({ users: userRepo(true), accounts: accountRepo() });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, { description: 'bakso', amount: 20_000, categoryId: 'food.dining' });
+    expect(res).toEqual({ status: 'missing_fields', missing: ['accountId'] });
+  });
+
+  it('self-heals: lazily creates the default account when findDefault misses', async () => {
+    const repos = mockRepos({ users: userRepo(false), accounts: accountRepo({ findDefault: vi.fn(async () => null) }) });
+    const { create_income } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_income, { description: 'gaji', amount: 1_000_000, categoryId: 'income.salary' });
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.ensureDefaultAccount).toHaveBeenCalledWith('u1');
+    expect(repos.transactions.create).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'dompet' }));
+    expect(repos.accounts.updateBalance).toHaveBeenCalledWith('u1', 'dompet', 1_000_000);
+  });
+
+  it('still honors an explicitly named account in simple mode', async () => {
+    const repos = mockRepos({ users: userRepo(false), accounts: accountRepo() });
+    const { create_expense } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_expense, { description: 'bakso', amount: 20_000, accountId: 'bca', categoryId: 'food.dining' });
+    expect(res.status).toBe('ok');
+    expect(repos.transactions.create).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'a1' }));
+  });
+
+  it('routes create_recurring_payment to the default account when omitted', async () => {
+    const repos = mockRepos({
+      users: userRepo(false),
+      accounts: accountRepo(),
+      recurrings: {
+        findAllByUserId: vi.fn(), findByDayOfMonth: vi.fn(), findDueToday: vi.fn(), findById: vi.fn(), findByName: vi.fn(),
+        create: vi.fn(async () => ({ recurringId: 'r1' })), update: vi.fn(), deactivate: vi.fn(),
+      } as never,
+    });
+    const { create_recurring_payment } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(create_recurring_payment, { name: 'Spotify', amount: 59_900, categoryId: 'entertainment.streaming', dayOfMonth: 5 });
+    expect(res.status).toBe('ok');
+    expect(repos.recurrings.create).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'dompet' }));
+  });
+});
+
+describe('buildTools — set_accounts_mode (FR-11)', () => {
+  const dompet = { accountId: 'dompet', userId: 'u1', name: 'Dompet', type: 'cash' as const, balance: 50_000, isDefault: true, isActive: true, createdAt: '', updatedAt: '' };
+
+  function modeRepos(over: { findDefault?: unknown; ensure?: unknown } = {}) {
+    return mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        findDefault: vi.fn(async () => over.findDefault ?? null),
+        ensureDefaultAccount: vi.fn(async () => over.ensure ?? dompet),
+        create: vi.fn(),
+        updateBalance: vi.fn(),
+        update: vi.fn(async (_u: string, _id: string, patch: { isActive: boolean }) => ({ ...dompet, ...patch })),
+      } as never,
+      users: {
+        findByTelegramChatId: vi.fn(),
+        findById: vi.fn(async () => null),
+        findAll: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        setAccountsEnabled: vi.fn(async () => undefined),
+      } as never,
+    });
+  }
+  type ModeResult = ToolCallResult & { data?: { accountsEnabled?: boolean; dompet?: { name: string; balance: number } } };
+
+  it('is registered during onboarding (hasAccount=false) — the simple-mode choice lives there', () => {
+    const tools = buildTools({ userId: 'u1', repos: mockRepos(), hasAccount: false });
+    expect(tools.set_accounts_mode).toBeDefined();
+  });
+
+  it('disables: ensures Dompet + flips the flag; no balance ever moves', async () => {
+    const repos = modeRepos({ findDefault: null, ensure: dompet });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: false });
+    const res = (await callExec(set_accounts_mode, { useAccounts: false })) as ModeResult;
+    expect(res.status).toBe('ok');
+    expect(res.data?.accountsEnabled).toBe(false);
+    expect(res.data?.dompet?.name).toBe('Dompet');
+    expect(repos.accounts.ensureDefaultAccount).toHaveBeenCalledWith('u1');
+    expect(repos.users.setAccountsEnabled).toHaveBeenCalledWith('u1', false);
+    expect(repos.accounts.updateBalance).not.toHaveBeenCalled();
+  });
+
+  it('refuses to enable while the Dompet balance is non-zero', async () => {
+    const repos = modeRepos({ findDefault: { ...dompet, balance: 50_000 } });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(set_accounts_mode, { useAccounts: true });
+    expect(res.status).toBe('error');
+    expect(res.message).toContain('Dompet');
+    expect(res.message).toContain('50.000');
+    expect(repos.users.setAccountsEnabled).not.toHaveBeenCalled();
+  });
+
+  it('refuses to enable on a negative Dompet balance too (owing blocks the gate)', async () => {
+    const repos = modeRepos({ findDefault: { ...dompet, balance: -20_000 } });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(set_accounts_mode, { useAccounts: true });
+    expect(res.status).toBe('error');
+    expect(repos.users.setAccountsEnabled).not.toHaveBeenCalled();
+  });
+
+  it('enables when Dompet is empty: flips the flag and deactivates Dompet', async () => {
+    const repos = modeRepos({ findDefault: { ...dompet, balance: 0 } });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = (await callExec(set_accounts_mode, { useAccounts: true })) as ModeResult;
+    expect(res.status).toBe('ok');
+    expect(res.data?.accountsEnabled).toBe(true);
+    expect(repos.users.setAccountsEnabled).toHaveBeenCalledWith('u1', true);
+    expect(repos.accounts.update).toHaveBeenCalledWith('u1', 'dompet', { isActive: false });
+  });
+
+  it('enables with no Dompet at all (user never used simple mode)', async () => {
+    const repos = modeRepos({ findDefault: null });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = (await callExec(set_accounts_mode, { useAccounts: true })) as ModeResult;
+    expect(res.status).toBe('ok');
+    expect(repos.accounts.update).not.toHaveBeenCalled();
+  });
+
+  it('returns the Bahasa error copy when the repo throws', async () => {
+    const repos = mockRepos({
+      accounts: {
+        findAllByUserId: vi.fn(async () => []),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        findDefault: vi.fn(async () => { throw new Error('db down'); }),
+        ensureDefaultAccount: vi.fn(async () => dompet),
+        create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+      } as never,
+    });
+    const { set_accounts_mode } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(set_accounts_mode, { useAccounts: true });
+    expect(res).toEqual({ status: 'error', message: 'Gagal mengubah mode akun. Coba lagi.' });
+  });
+});
+
+describe('buildTools — get_account_balance in simple mode (FR-11)', () => {
+  const dompet = { accountId: 'dompet', userId: 'u1', name: 'Dompet', type: 'cash' as const, balance: 50_000, isDefault: true, isActive: true, createdAt: '', updatedAt: '' };
+  const bca = { accountId: 'a1', userId: 'u1', name: 'BCA', type: 'bank' as const, balance: 100_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '' };
+  const cc = { accountId: 'cc', userId: 'u1', name: 'BCA CC', type: 'card' as const, balance: -30_000, creditLimit: 5_000_000, isDefault: false, isActive: true, createdAt: '', updatedAt: '' };
+
+  function simpleUser() {
+    return {
+      findByTelegramChatId: vi.fn(),
+      findById: vi.fn(async () => ({ userId: 'u1', telegramChatId: 'c1', name: 'U', language: 'id' as const, timezone: 'Asia/Jakarta', accountsEnabled: false, status: 'approved' as const, createdAt: '', updatedAt: '' })),
+      findAll: vi.fn(), create: vi.fn(), update: vi.fn(), setAccountsEnabled: vi.fn(),
+    } as never;
+  }
+
+  it('returns one aggregate: liquid saldo + separate card debt', async () => {
+    const repos = mockRepos({
+      users: simpleUser(),
+      accounts: {
+        findAllByUserId: vi.fn(async () => [bca, dompet, cc]),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = (await callExec(get_account_balance, {})) as ToolCallResult & { mode?: string; saldo?: number; utangKartu?: number };
+    expect(res).toEqual({ mode: 'sederhana', saldo: 150_000, utangKartu: 30_000 });
+  });
+
+  it('omits utangKartu when there is no card debt', async () => {
+    const repos = mockRepos({
+      users: simpleUser(),
+      accounts: {
+        findAllByUserId: vi.fn(async () => [bca, dompet]),
+        findById: vi.fn(async () => null),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = (await callExec(get_account_balance, {})) as ToolCallResult & { mode?: string; saldo?: number; utangKartu?: number };
+    expect(res).toEqual({ mode: 'sederhana', saldo: 150_000 });
+  });
+
+  it('still returns a single account when an explicit accountId is given', async () => {
+    const repos = mockRepos({
+      users: simpleUser(),
+      accounts: {
+        findAllByUserId: vi.fn(async () => [bca, dompet]),
+        findById: vi.fn(async (_u: string, id: string) => (id === 'a1' ? bca : null)),
+        findByName: vi.fn(async () => null),
+        create: vi.fn(), updateBalance: vi.fn(), update: vi.fn(),
+      } as never,
+    });
+    const { get_account_balance } = buildTools({ userId: 'u1', repos, hasAccount: true });
+    const res = await callExec(get_account_balance, { accountId: 'a1' });
+    expect(res).toEqual({ accountId: 'a1', name: 'BCA', balance: 100_000 });
   });
 });

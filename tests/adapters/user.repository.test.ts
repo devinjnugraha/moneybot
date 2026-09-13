@@ -51,3 +51,17 @@ describe('NeonUserRepository.findAll', () => {
     expect(ids).toContain(u2.userId);
   });
 });
+
+describe('NeonUserRepository.setAccountsEnabled (FR-11)', () => {
+  it('defaults to accounts mode and flips both ways', async () => {
+    const repo = new NeonUserRepository();
+    const created = await repo.create({ telegramChatId: uniqueChatId(), name: 'U' });
+    expect(created.accountsEnabled).toBe(true); // legacy default — old users unaffected
+
+    await repo.setAccountsEnabled(created.userId, false);
+    expect((await repo.findById(created.userId))?.accountsEnabled).toBe(false);
+
+    await repo.setAccountsEnabled(created.userId, true);
+    expect((await repo.findById(created.userId))?.accountsEnabled).toBe(true);
+  });
+});

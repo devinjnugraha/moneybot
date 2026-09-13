@@ -233,3 +233,52 @@ describe('buildSystemPrompt — card billing rules', () => {
     expect(prompt).toContain('BUKAN create_transfer');
   });
 });
+
+describe('buildSystemPrompt — accounts mode (FR-11)', () => {
+  const prompt = buildSystemPrompt('2026-09-13');
+
+  it('documents the toggle tool and its confirm-first rule', () => {
+    expect(prompt).toContain('set_accounts_mode');
+    expect(prompt).toMatch(/WAJIB konfirmasi/i);
+  });
+
+  it('documents the re-enable gate (Dompet must be emptied)', () => {
+    expect(prompt).toMatch(/saldo "Dompet" 0/i);
+  });
+
+  it('onboarding asks for the mode instead of assuming an account', () => {
+    expect(prompt).toMatch(/mode sederhana/i);
+    expect(prompt).toContain('set_accounts_mode(useAccounts=false)');
+  });
+});
+
+describe('enrichSystemPrompt — MODE SEDERHANA block (FR-11)', () => {
+  const base = 'BASE';
+  const account: Account = {
+    accountId: 'acct-1', userId: 'u1', name: 'BCA', type: 'bank',
+    balance: 1234567, isDefault: false, isActive: true, createdAt: '', updatedAt: '',
+  };
+
+  it('appends the override block LAST when accountsEnabled is false', () => {
+    const out = enrichSystemPrompt(base, { accounts: [account], accountsEnabled: false });
+    expect(out).toContain('MODE SEDERHANA');
+    // the real AKUN USER section header (with its parenthetical) precedes the
+    // mode block — the block's own prose mentions "blok AKUN USER" too, so
+    // match the header form, not the bare phrase
+    expect(out.indexOf('AKUN USER (')).toBeLessThan(out.indexOf('MODE SEDERHANA'));
+    expect(out).toContain('JANGAN pernah menanya akun');
+    expect(out).toContain('HAPUS baris akun');
+    expect(out).toContain('get_account_balance TANPA accountId');
+  });
+
+  it('keeps accounts listed in simple mode (explicit mentions + re-enable prep resolve them)', () => {
+    const out = enrichSystemPrompt(base, { accounts: [account], accountsEnabled: false });
+    expect(out).toContain('AKUN USER');
+    expect(out).toContain('acct-1 BCA');
+  });
+
+  it('omits the block in accounts mode (true or undefined)', () => {
+    expect(enrichSystemPrompt(base, { accounts: [account], accountsEnabled: true })).not.toContain('MODE SEDERHANA');
+    expect(enrichSystemPrompt(base, { accounts: [account] })).not.toContain('MODE SEDERHANA');
+  });
+});

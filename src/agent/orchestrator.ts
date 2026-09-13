@@ -64,7 +64,12 @@ export async function handleMessage(args: HandleMessageArgs): Promise<HandleMess
 			args.repos.budgets.findByUserAndMonth(user.userId, wibYear(), wibMonth()),
 		]);
 		accounts = fetchedAccounts;
-		system = enrichSystemPrompt(args.system, { preferences: prefs, accounts, budgets });
+		system = enrichSystemPrompt(args.system, {
+			preferences: prefs,
+			accounts,
+			budgets,
+			accountsEnabled: user.accountsEnabled,
+		});
 	} catch (e) {
 		logEvent('error', 'prompt enrichment failed', {
 			userId: user.userId,

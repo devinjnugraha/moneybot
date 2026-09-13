@@ -83,3 +83,56 @@ describe('NeonAccountRepository', () => {
     expect(updated.dueInDays).toBe(10);
   });
 });
+
+describe('NeonAccountRepository default account (FR-11)', () => {
+  it('findDefault is null before ensure, then ensureDefaultAccount creates "Dompet" (cash, default, active)', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    expect(await accounts.findDefault(user.userId)).toBeNull();
+
+    const dompet = await accounts.ensureDefaultAccount(user.userId);
+    expect(dompet.name).toBe('Dompet');
+    expect(dompet.type).toBe('cash');
+    expect(dompet.isDefault).toBe(true);
+    expect(dompet.isActive).toBe(true);
+    expect((await accounts.findDefault(user.userId))?.accountId).toBe(dompet.accountId);
+  });
+
+  it('ensureDefaultAccount is idempotent — same row on repeat calls', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    const first = await accounts.ensureDefaultAccount(user.userId);
+    const second = await accounts.ensureDefaultAccount(user.userId);
+    expect(second.accountId).toBe(first.accountId);
+    expect(await accounts.findAllByUserId(user.userId)).toHaveLength(1);
+  });
+
+  it('ensureDefaultAccount reactivates a deactivated default (accounts-mode stretch)', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    const dompet = await accounts.ensureDefaultAccount(user.userId);
+    await accounts.update(user.userId, dompet.accountId, { isActive: false });
+    expect((await accounts.findDefault(user.userId))?.isActive).toBe(false); // gate reads inactive rows
+
+    const revived = await accounts.ensureDefaultAccount(user.userId);
+    expect(revived.accountId).toBe(dompet.accountId);
+    expect(revived.isActive).toBe(true);
+  });
+
+  it('keeps defaults per-user (two users, two Dompets, no cross-talk)', async () => {
+    const accounts = new NeonAccountRepository();
+    const u1 = await seedUser();
+    const u2 = await seedUser();
+    const d1 = await accounts.ensureDefaultAccount(u1.userId);
+    const d2 = await accounts.ensureDefaultAccount(u2.userId);
+    expect(d1.accountId).not.toBe(d2.accountId);
+    expect((await accounts.findAllByUserId(u1.userId)).map((a) => a.accountId)).toEqual([d1.accountId]);
+  });
+
+  it('regular create() stays non-default', async () => {
+    const user = await seedUser();
+    const accounts = new NeonAccountRepository();
+    const acc = await accounts.create({ userId: user.userId, name: 'BCA', type: 'bank' });
+    expect(acc.isDefault).toBe(false);
+  });
+});

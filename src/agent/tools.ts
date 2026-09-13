@@ -14,6 +14,7 @@ import { leakCandidates, DORMANT_DAYS } from '../domain/analytics/leaks.js';
 import { monthBounds, resolveComparison } from '../domain/analytics/period.js';
 import { config } from '../config/index.js';
 import { logEvent } from '../utils/logger.js';
+import { formatIDR } from '../utils/format.js';
 
 export interface BuildToolsArgs {
   userId: string;
@@ -154,8 +155,18 @@ export async function computeInsightContext(args: {
   budget?: { spent: number; limit: number; exceeded: boolean };
 }): Promise<InsightContext> {
   const today = todayWIB(args.now);
-  const acc = await args.repos.accounts.findById(args.userId, args.accountId);
-  const balanceAfter = acc?.balance ?? 0;
+  // FR-11: in simple mode the insight must read the combined balance — a lone
+  // "Dompet" figure would cry "saldo menipis" for a legacy switcher whose
+  // frozen accounts still hold most of their money.
+  const user = await args.repos.users.findById(args.userId);
+  let balanceAfter: number;
+  if (user?.accountsEnabled === false) {
+    const all = await args.repos.accounts.findAllByUserId(args.userId);
+    balanceAfter = all.filter((a) => a.type !== 'card').reduce((s, a) => s + a.balance, 0);
+  } else {
+    const acc = await args.repos.accounts.findById(args.userId, args.accountId);
+    balanceAfter = acc?.balance ?? 0;
+  }
 
   let todayCount = 0;
   let todaySpend = 0;
@@ -205,6 +216,39 @@ async function tryComputeInsightContext(args: {
   } catch {
     return undefined;
   }
+}
+
+/** Resolve the account for a write tool (FR-11). An explicit accountId/name
+ *  always wins and resolves exactly as before (findById → findByName →
+ *  ambiguous). When omitted: simple mode (accounts_enabled=false) routes to
+ *  the user's default "Dompet" — the flag is read fresh here so a mid-turn
+ *  set_accounts_mode is honored — while accounts mode asks (missing_fields). */
+async function resolveAccountParam(
+  userId: string,
+  repos: Repos,
+  accountId?: string,
+): Promise<{ account: Account } | { rejection: TransactionResult }> {
+  if (accountId) {
+    let account = await repos.accounts.findById(userId, accountId);
+    if (!account) account = await repos.accounts.findByName(userId, accountId);
+    if (account) return { account };
+    const all = await repos.accounts.findAllByUserId(userId);
+    return {
+      rejection: {
+        status: 'ambiguous',
+        field: 'accountId',
+        matches: all.map((a) => ({ id: a.accountId, label: a.name })),
+      },
+    };
+  }
+  const user = await repos.users.findById(userId);
+  if (user?.accountsEnabled === false) {
+    const dompet =
+      (await repos.accounts.findDefault(userId)) ??
+      (await repos.accounts.ensureDefaultAccount(userId));
+    return { account: dompet };
+  }
+  return { rejection: { status: 'missing_fields', missing: ['accountId'] } };
 }
 
 export function buildTools({ userId, repos, hasAccount, lastTransactionId }: BuildToolsArgs) {
@@ -372,6 +416,17 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
         return { accountId: acc.accountId, name: acc.name, balance: acc.balance };
       }
       const all = await repos.accounts.findAllByUserId(userId);
+      // FR-11: simple mode shows ONE combined number — legacy accounts are
+      // frozen but still counted (virtual consolidation). Card debt is
+      // reported separately so it never silently nets into liquid saldo.
+      const user = await repos.users.findById(userId);
+      if (user?.accountsEnabled === false) {
+        const saldo = all.filter((a) => a.type !== 'card').reduce((s, a) => s + a.balance, 0);
+        const utangKartu = -all
+          .filter((a) => a.type === 'card')
+          .reduce((s, a) => s + Math.min(0, a.balance), 0);
+        return { mode: 'sederhana', saldo, ...(utangKartu > 0 ? { utangKartu } : {}) };
+      }
       return all.map((a) => ({ accountId: a.accountId, name: a.name, balance: a.balance }));
     },
   });
@@ -436,6 +491,48 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
       } catch (e) {
         logEvent('error', 'update_profile failed', { userId, error: (e as Error).message });
         return { status: 'error', message: 'Gagal memperbarui profil. Coba lagi.' };
+      }
+    },
+  });
+
+  tools.set_accounts_mode = tool({
+    description:
+      'Ganti mode pencatatan user (FR-11). useAccounts=false → mode sederhana: transaksi tanpa akun otomatis masuk "Dompet", saldo tampil sebagai satu angka gabungan; akun lama dibekukan — saldo TIDAK dipindah. ' +
+      'useAccounts=true → kembali ke mode akun; DITOLAK selama saldo "Dompet" belum 0 (minta user transfer keluar dulu via create_transfer; buat akun baru bila perlu). ' +
+      'WAJIB konfirmasi user dulu sebelum memanggil. Saat onboarding user memilih mode sederhana → panggil useAccounts=false.',
+    parameters: z.object({
+      useAccounts: z.boolean().describe('true = mode akun (per akun), false = mode sederhana (satu "Dompet").'),
+    }),
+    execute: async ({ useAccounts }) => {
+      try {
+        if (!useAccounts) {
+          const dompet = await repos.accounts.ensureDefaultAccount(userId);
+          await repos.users.setAccountsEnabled(userId, false);
+          return {
+            status: 'ok',
+            data: {
+              accountsEnabled: false,
+              dompet: { accountId: dompet.accountId, name: dompet.name, balance: dompet.balance },
+            },
+          };
+        }
+        // FR-11b gate: re-enabling requires an empty Dompet so accounts mode
+        // never inherits a mystery container with a balance.
+        const dompet = await repos.accounts.findDefault(userId);
+        if (dompet && Math.abs(dompet.balance) >= 0.005) {
+          return {
+            status: 'error',
+            message:
+              `Saldo "${dompet.name}" masih ${formatIDR(dompet.balance)}. ` +
+              'Transfer dulu saldo itu ke akun lain (create_transfer dari "Dompet"; buat akun baru dulu bila belum ada), baru aktifkan kembali mode akun.',
+          };
+        }
+        await repos.users.setAccountsEnabled(userId, true);
+        if (dompet) await repos.accounts.update(userId, dompet.accountId, { isActive: false });
+        return { status: 'ok', data: { accountsEnabled: true } };
+      } catch (e) {
+        logEvent('error', 'set_accounts_mode failed', { userId, error: (e as Error).message });
+        return { status: 'error', message: 'Gagal mengubah mode akun. Coba lagi.' };
       }
     },
   });
@@ -765,24 +862,21 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
   const expenseSchema = z.object({
     description: z.string(),
     amount: z.number().positive(),
-    accountId: z.string().describe('Bisa nama akun (mis. "bca") atau accountId. Resolve via get_accounts.'),
+    accountId: z.string().optional().describe('Bisa nama akun (mis. "bca") atau accountId. Resolve via get_accounts. Di mode sederhana: kosongkan — otomatis masuk "Dompet".'),
     categoryId: z.string(),
     budgetCodeId: z.string().optional(),
     date: z.string().optional().describe('YYYY-MM-DD (WIB). Default: hari ini.'),
   });
 
   tools.create_expense = tool({
-    description: 'Catat pengeluaran. Resolve accountId via get_accounts bila ragu.',
+    description: 'Catat pengeluaran. Resolve accountId via get_accounts bila ragu. Di mode sederhana, accountId boleh dikosongkan.',
     parameters: expenseSchema,
     execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
       if (!isValidCategoryId(categoryId)) return invalidCategoryId();
-      // Resolve account: accept accountId or account name
-      let account = await repos.accounts.findById(userId, accountId);
-      if (!account) account = await repos.accounts.findByName(userId, accountId);
-      if (!account) {
-        const all = await repos.accounts.findAllByUserId(userId);
-        return { status: 'ambiguous', field: 'accountId', matches: all.map((a) => ({ id: a.accountId, label: a.name })) } as TransactionResult;
-      }
+      // Resolve account: explicit id/name, else the simple-mode default (FR-11)
+      const resolved = await resolveAccountParam(userId, repos, accountId);
+      if ('rejection' in resolved) return resolved.rejection;
+      const account = resolved.account;
 
       // FR-03c: if budgetCodeId is a name (not UUID), resolve it
       let resolvedBudgetCodeId = budgetCodeId;
@@ -806,11 +900,11 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
   });
 
   tools.create_income = tool({
-    description: 'Catat pemasukan. Mirip create_expense tapi saldo bertambah.',
+    description: 'Catat pemasukan. Mirip create_expense tapi saldo bertambah. Di mode sederhana, accountId boleh dikosongkan.',
     parameters: z.object({
       description: z.string(),
       amount: z.number().positive(),
-      accountId: z.string().describe('Bisa nama akun atau accountId.'),
+      accountId: z.string().optional().describe('Bisa nama akun atau accountId. Di mode sederhana: kosongkan — otomatis masuk "Dompet".'),
       categoryId: z.string(),
       budgetCodeId: z.string().optional(),
       date: z.string().optional().describe('YYYY-MM-DD (WIB). Default: hari ini.'),
@@ -818,17 +912,9 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     execute: async ({ description, amount, accountId, categoryId, budgetCodeId, date }) => {
       try {
         if (!isValidCategoryId(categoryId)) return invalidCategoryId();
-        let account = await repos.accounts.findById(userId, accountId);
-        if (!account) account = await repos.accounts.findByName(userId, accountId);
-        if (!account) {
-          const all = await repos.accounts.findAllByUserId(userId);
-          const res: TransactionResult = {
-            status: 'ambiguous',
-            field: 'accountId',
-            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
-          };
-          return res;
-        }
+        const resolved = await resolveAccountParam(userId, repos, accountId);
+        if ('rejection' in resolved) return resolved.rejection;
+        const account = resolved.account;
 
         const transaction = await repos.transactions.create({
           userId,
@@ -1210,11 +1296,11 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
   });
 
   tools.create_recurring_payment = tool({
-    description: 'Buat jadwal pembayaran berulang bulanan. nextFireAt dihitung otomatis dari dayOfMonth.',
+    description: 'Buat jadwal pembayaran berulang bulanan. nextFireAt dihitung otomatis dari dayOfMonth. Di mode sederhana, accountId boleh dikosongkan.',
     parameters: z.object({
       name: z.string(),
       amount: z.number().positive(),
-      accountId: z.string(),
+      accountId: z.string().optional().describe('Bisa nama akun atau accountId. Di mode sederhana: kosongkan — otomatis masuk "Dompet".'),
       categoryId: z.string(),
       dayOfMonth: z.number().int().min(1).max(31),
       budgetCodeId: z.string().optional(),
@@ -1222,16 +1308,9 @@ export function buildTools({ userId, repos, hasAccount, lastTransactionId }: Bui
     execute: async ({ name, amount, accountId, categoryId, dayOfMonth, budgetCodeId }) => {
       try {
         if (!isValidCategoryId(categoryId)) return invalidCategoryId();
-        let account = await repos.accounts.findById(userId, accountId);
-        if (!account) account = await repos.accounts.findByName(userId, accountId);
-        if (!account) {
-          const all = await repos.accounts.findAllByUserId(userId);
-          return {
-            status: 'ambiguous',
-            field: 'accountId',
-            matches: all.map((a) => ({ id: a.accountId, label: a.name })),
-          };
-        }
+        const resolved = await resolveAccountParam(userId, repos, accountId);
+        if ('rejection' in resolved) return resolved.rejection;
+        const account = resolved.account;
 
         const nextFireAt = nextFireDate(dayOfMonth);
 
