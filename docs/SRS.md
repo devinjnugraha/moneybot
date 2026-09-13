@@ -167,6 +167,7 @@ interface User {
     name: string;
     language: "id" | "en"; // default: 'id'
     timezone: string; // default: 'Asia/Jakarta'
+    accountsEnabled: boolean; // default: true. false = simple mode (FR-11)
     createdAt: string; // ISO 8601
     updatedAt: string;
 }
@@ -184,6 +185,7 @@ interface Account {
     type: AccountType;
     balance: number; // cached balance; negative for CC with outstanding debt
     creditLimit?: number; // required only for type: 'card'
+    isDefault: boolean; // true only for the per-user "Dompet" container (FR-11); at most one per user
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
@@ -314,6 +316,7 @@ CREATE TABLE users (
   name           VARCHAR     NOT NULL,
   language       VARCHAR(2)  NOT NULL DEFAULT 'id',
   timezone       VARCHAR     NOT NULL DEFAULT 'Asia/Jakarta',
+  accounts_enabled BOOLEAN   NOT NULL DEFAULT true, -- false = simple mode (FR-11)
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -327,11 +330,13 @@ CREATE TABLE accounts (
   type         VARCHAR     NOT NULL CHECK (type IN ('cash', 'bank', 'card')),
   balance      NUMERIC     NOT NULL DEFAULT 0,
   credit_limit NUMERIC,
+  is_default   BOOLEAN     NOT NULL DEFAULT false, -- the per-user "Dompet" (FR-11)
   is_active    BOOLEAN     NOT NULL DEFAULT true,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_accounts_user ON accounts(user_id);
+CREATE UNIQUE INDEX idx_accounts_default ON accounts(user_id) WHERE is_default;
 
 -- Categories (system-seeded)
 CREATE TABLE categories (
@@ -421,6 +426,7 @@ CREATE TABLE processed_updates (
 | -------------------------- | -------------------- | -------------------------------- | ------------------------------------------------------------ |
 | `idx_users_telegram`       | `users`              | `telegram_chat_id` (UNIQUE)      | Resolve userId from incoming Telegram chatId                 |
 | `idx_accounts_user`        | `accounts`           | `user_id`                        | List accounts for a user                                     |
+| `idx_accounts_default`     | `accounts`           | `user_id` WHERE `is_default` (UNIQUE) | At most one "Dompet" container per user (FR-11)         |
 | `idx_txn_user_date`        | `transactions`       | `(user_id, date)`                | Date-range queries per user                                  |
 | `idx_txn_account_date`     | `transactions`       | `(account_id, date)`             | Date-range queries per account                               |
 | `idx_budget_user_month`    | `budget_codes`       | `(user_id, year, month)`         | Budget codes for a given month                               |
@@ -432,6 +438,7 @@ CREATE TABLE processed_updates (
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Resolve user from Telegram chatId        | `SELECT * FROM users WHERE telegram_chat_id = $1`                                                                   |
 | Get all accounts for user                | `SELECT * FROM accounts WHERE user_id = $1 AND is_active = true`                                                    |
+| Get-or-create the user's "Dompet"        | `INSERT INTO accounts (user_id, name, type, is_default) VALUES ($1,'Dompet','cash',true) ON CONFLICT (user_id) WHERE is_default DO UPDATE SET is_active = true RETURNING *` |
 | Get transactions by date range           | `SELECT * FROM transactions WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND deleted_at IS NULL`                   |
 | Get transactions by account + date range | `SELECT * FROM transactions WHERE account_id = $1 AND date BETWEEN $2 AND $3 AND deleted_at IS NULL`                |
 | Get budget codes for user in a month     | `SELECT * FROM budget_codes WHERE user_id = $1 AND year = $2 AND month = $3`                                        |
@@ -452,8 +459,11 @@ These TypeScript interfaces are the **only** abstraction the tool layer and agen
 interface IUserRepository {
     findByTelegramChatId(chatId: string): Promise<User | null>;
     findById(userId: string): Promise<User | null>;
+    findAll(): Promise<User[]>;
     create(input: CreateUserInput): Promise<User>;
     update(userId: string, patch: Partial<User>): Promise<User>;
+    /** Flip the accounts-mode flag (FR-11). No other effects — balance moves happen elsewhere or never. */
+    setAccountsEnabled(userId: string, enabled: boolean): Promise<void>;
 }
 
 interface IAccountRepository {
@@ -463,6 +473,10 @@ interface IAccountRepository {
     create(input: CreateAccountInput): Promise<Account>;
     updateBalance(userId: string, accountId: string, delta: number): Promise<void>;
     update(userId: string, accountId: string, patch: Partial<Account>): Promise<Account>;
+    /** Get-or-create the user's default "Dompet" account; reactivates it if inactive. Idempotent (FR-11). */
+    ensureDefaultAccount(userId: string): Promise<Account>;
+    /** The user's default account regardless of is_active; null when none exists (FR-11 gate check). */
+    findDefault(userId: string): Promise<Account | null>;
 }
 
 interface ITransactionRepository {
@@ -563,6 +577,7 @@ The system prompt (`/src/agent/system-prompt.ts`) MUST enforce the following as 
 | SP-08 | When user says "koreksi transaksi tadi", retrieve `lastTransactionId` from session context. If absent, ask: "Transaksi mana yang mau dikoreksi? Sebutin deskripsi atau tanggalnya."                                                                                                     |
 | SP-09 | Agent has full autonomy to chain multiple tool calls to complete a goal. Do not ask for user confirmation between intermediate tool calls — only confirm before final write operations when required fields are resolved.                                                               |
 | SP-10 | Format all amounts using IDR locale: dot as thousands separator, no currency symbol (e.g. `20.000`, `1.500.000`). Never output `Rp` or `IDR`.                                                                                                                                           |
+| SP-11 | In simple mode (`accounts_enabled = false`), never ask about or mention accounts when logging transactions — `accountId` is auto-filled with "Dompet". Omit the account line from confirmations. Balance questions use the aggregated result of `get_account_balance` (no `accountId`). Explicit user-named accounts are still honored. |
 
 ### 8.3 Tool Registry
 
@@ -588,6 +603,9 @@ All tools registered in `/src/tools/index.ts` with full JSON Schema definitions 
 | T16     | `get_account_balance`          | read  | Get current balance for one or all accounts                                        |
 | T17     | `update_budget_code`           | write | Update a budget code's monthly allocation and/or auto-tagging rules (`""` clears rules) |
 | T18     | `delete_budget_code`           | write | Delete a budget code; stops the recurring roll-over chain, keeps transactions       |
+| T19     | `set_accounts_mode`            | write | Toggle accounts mode (FR-11); enabling refuses while "Dompet" balance ≠ 0          |
+
+> `accountId` on `create_expense` / `create_income` / `create_recurring_payment` is **optional**: omitted + simple mode → the default "Dompet" account (FR-11); omitted + accounts mode → `missing_fields` (agent asks, per FR-03b).
 
 ### 8.4 `create_transfer` Implementation Notes
 
@@ -625,10 +643,13 @@ Session storage: Neon `session_contexts` table. On each session load, if `last_a
 
 **Then:**
 
-1. Create `User` record (`language: 'id'`, `timezone: 'Asia/Jakarta'`).
+1. Create `User` record (`language: 'id'`, `timezone: 'Asia/Jakarta'`, `accountsEnabled: true`).
 2. Send welcome message explaining MoneyBot in Bahasa Indonesia.
-3. Immediately prompt user to create their first account (name + type).
-4. Block all transaction tools until at least one active `Account` exists for the user.
+3. Ask for the user's name (persist via `update_profile`; default "Teman" if declined).
+4. Ask which mode they want (do not guess — FR-11):
+   - **Accounts mode**: prompt for their first account (name + type) → `create_account`.
+   - **Simple mode**: `set_accounts_mode(useAccounts: false)` → creates the "Dompet" default account.
+5. Block all transaction tools until at least one active `Account` exists for the user ("Dompet" counts).
 
 ---
 
@@ -694,12 +715,14 @@ Session storage: Neon `session_contexts` table. On each session load, if `last_a
 
 **When:** `"beli parfum 449000 budget raissa"` (no account)
 
-**Then:**
+**Then (accounts mode):**
 
 1. Extract: `description = "beli parfum"`, `amount = 449000`, `budgetCode = "raissa"`. Detect: `account` missing.
 2. Call `get_accounts` for available options.
 3. Ask: `"Untuk 'Beli Parfum 449.000', pakai akun mana? (BCA, BCA CC, Cash)"`
 4. User replies → resolve account → proceed to FR-03c → then FR-03a steps 3–6.
+
+**Then (simple mode):** the omitted `accountId` is auto-filled with the user's "Dompet" default account by the tool — the agent never asks (SP-11). Proceed directly to FR-03c → FR-03a.
 
 #### FR-03c · Unregistered Budget Code — Agent Prompts
 
@@ -1029,6 +1052,50 @@ Semantics — "stop going forward" (enforced by the repository in one transactio
 - All amounts: IDR locale, dot as thousands separator, no currency symbol (e.g. `1.245.000`).
 - All dates displayed as `DD Mon YYYY` in Indonesian (e.g. `07 Jun 2025`).
 - Date range resolution always uses WIB (UTC+7).
+
+---
+
+### FR-11 · Account Mode Toggle (Simple Mode)
+
+**Goal:** Let a user opt out of per-account tracking entirely and record transactions without ever specifying an account. One number in, one balance out. Switchable in both directions at any time.
+
+**State:** `users.accounts_enabled` (boolean, default `true`). All pre-existing users are `true` — this feature changes nothing for them until they explicitly toggle.
+
+**The "Dompet" container:** each user has at most one default account (`accounts.is_default`, partial unique index per user), named **Dompet**, type `cash`, lazily created by `ensureDefaultAccount`. It is an ordinary account row so every existing invariant (transactions FK, balance updates, reports) applies unchanged.
+
+#### FR-11a · Toggle OFF (→ simple mode)
+
+**When:** `"aku mau mode sederhana aja"` / `"gapakai akun deh"` (agent confirms intent first, explaining the effects below)
+
+**Then** `set_accounts_mode(useAccounts: false)`:
+
+1. `ensureDefaultAccount(userId)` — create "Dompet" if absent, reactivate if inactive.
+2. Set `users.accounts_enabled = false`.
+3. **No balance movement ever** (virtual consolidation, decision 2026-09-13): legacy accounts are *frozen, not merged* — their rows and balances are untouched and no transfer transactions are written. The "single balance" is a read-time aggregate, so the switch is fully reversible and writes no ledger noise.
+
+**While simple mode is active:**
+
+- `create_expense` / `create_income` / `create_recurring_payment` treat `accountId` as optional; omitted → routed to Dompet (SP-11: the agent never asks). If the user *explicitly* names an account, it is honored (resolution unchanged).
+- `get_account_balance` without `accountId` returns one aggregate: `saldo` = Σ balances of non-card accounts, plus `utangKartu` = Σ negative card balances when > 0.
+- Reporting, analytics, budgets, and proactive triggers work unchanged (they are account-agnostic); morning-glance renders the aggregate instead of per-account lines.
+- Existing recurring payments keep charging their original accounts — the aggregate still counts them, so totals stay truthful.
+- Historical transactions are never rewritten.
+
+#### FR-11b · Toggle ON (→ accounts mode, gated)
+
+**When:** `"aku mau pakai akun lagi"` / `"balikin mode akun"`
+
+**Then** `set_accounts_mode(useAccounts: true)`:
+
+1. **Gate:** if the Dompet balance ≠ 0 (either sign), the tool refuses with an error telling the user to transfer the balance out first (`create_transfer` from "Dompet"; `create_account` first if they have no other account). The agent guides this prep flow — both tools remain available in simple mode.
+2. Gate passed → set `users.accounts_enabled = true` and deactivate Dompet (`is_active = false`). Dompet disappears from account lists; its (empty) row and history remain for integrity.
+3. Frozen legacy accounts reappear exactly as they were before the toggle-off (their balances never moved).
+
+**Rationale for the gate:** re-enabling with a non-zero Dompet would leave a mystery account inside accounts mode. Emptying it is a conscious, user-directed redistribution — the one direction the system cannot decide alone.
+
+#### FR-11c · Onboarding Choice
+
+New users are asked which mode they want during onboarding (FR-01 step 4). Do not guess. Either choice unblocks transaction logging (Dompet counts as the required first account in simple mode).
 
 ---
 
