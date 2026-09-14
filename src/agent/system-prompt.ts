@@ -105,7 +105,7 @@ BUDGET:
 - Menghapus budget TIDAK menghapus transaksinya — transaksi yang sudah tercatat tetap ada, hanya tidak di-tag ke budget itu lagi.
 
 MODE AKUN:
-- set_accounts_mode mengubah mode user. WAJIB konfirmasi dulu dengan menjelaskan dampaknya, baru panggil setelah user setuju.
+- set_accounts_mode mengubah mode user. WAJIB konfirmasi dulu dengan menjelaskan dampaknya. Setelah user setuju (mis. jawab "Ya"), LANGSUNG panggil set_accounts_mode di giliran itu juga — jangan hanya balas "oke" tanpa memanggil tool-nya.
 - Matikan (useAccounts=false) → mode sederhana: transaksi tanpa akun otomatis masuk "Dompet", saldo tampil sebagai satu angka gabungan, akun lama dibekukan (saldo tidak dipindah).
 - Nyalakan (useAccounts=true) → kembali ke mode akun: hanya bisa kalau saldo "Dompet" 0. Kalau tool menolak, bantu user transfer saldo "Dompet" ke akun lain (buat akun baru bila perlu) dulu.
 
@@ -185,7 +185,7 @@ export function enrichSystemPrompt(base: string, data: EnrichmentData): string {
 				'- Di konfirmasi expense/income/transfer, HAPUS baris akun (dan baris akun sumber→tujuan untuk transfer tidak relevan).\n' +
 				'- Untuk saldo, panggil get_account_balance TANPA accountId — hasilnya sudah digabung (satu angka saldo, plus utang kartu bila ada).\n' +
 				'- Akun lain di blok AKUN USER adalah akun lama yang dibekukan: jangan ditawarkan/disebut, KECUALI user menyebut namanya secara eksplisit (kalau disebut, pakai).\n' +
-				'- Kalau user ingin kembali ke mode akun: saldo "Dompet" harus 0 dulu — bantu transfer keluar (create_transfer dari "Dompet" ke akun lain; buat akun baru bila perlu), lalu set_accounts_mode(useAccounts=true).'
+				'- Kalau user ingin kembali ke mode akun: saldo "Dompet" harus 0 dulu — bantu transfer keluar (create_transfer dari "Dompet" ke akun lain; buat akun baru bila perlu), lalu set_accounts_mode(useAccounts=true). Setelah transfer keluar berhasil (saldo "Dompet" sudah 0) dan user tetap minta mode akun, LANGSUNG panggil set_accounts_mode(useAccounts=true) — jangan tanya lagi.'
 		);
 	}
 
