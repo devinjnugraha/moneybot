@@ -8,7 +8,7 @@ Personal-finance LLM agent on Telegram (Bahasa Indonesia). TypeScript/Node, gram
 
 ## ⚠️ Active work in progress
 
-Budget removal (`delete_budget_code`, stop-going-forward semantics) shipped on `master` per `docs/superpowers/plans/2026-08-18-budget-removal.md`. The advisory layer (`docs/superpowers/plans/2026-08-16-advisory-layer.md`) is also merged into `master` — its local `feat/advisory-layer` branch is stale and can be deleted.
+Accounts-mode toggle (FR-11, `set_accounts_mode` + virtual-consolidation "Dompet") shipped on `master` per `docs/superpowers/plans/2026-09-13-accounts-mode-toggle.md`. Also on `master`: budget removal (`docs/superpowers/plans/2026-08-18-budget-removal.md`) and the advisory layer (`docs/superpowers/plans/2026-08-16-advisory-layer.md`, whose local `feat/advisory-layer` branch is stale and can be deleted).
 
 ## Architecture seams (hard rules)
 
